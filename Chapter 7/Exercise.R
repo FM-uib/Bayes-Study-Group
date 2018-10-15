@@ -1,10 +1,13 @@
+library(rjags)
+library(here)
+
 # Exercise
-source("functions/data_gen.R") # load Dataset generator
-source("CI.R") # load CI calc
+source(here("functions","data_gen.R")) # load Dataset generator
+source(here("functions","CI.R")) # load CI calc
 
 # 1. Adapt code to test difference in variance
 
-file.show("models/v.ttest.txt") # model for testing Variance
+file.show(here("models","v.ttest.txt")) # model for testing Variance
 
 data <- falcons.ws(sigma1 = 3, sigma2 = 2.4) # create falcon dataset with unequal variance
 
