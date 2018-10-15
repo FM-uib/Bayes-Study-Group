@@ -1,0 +1,23 @@
+
+    model {
+    # Likelihood
+    for (i in 1:n1) {
+    y1[i] ~ dnorm(mu1, tau1) 
+    }
+    
+    for (i in 1:n2) {
+    y2[i] ~ dnorm(mu2, tau2) 
+    }
+    
+    # Priors
+    mu1 ~ dnorm(0,0.001)
+    mu2 ~ dnorm(0,0.001)
+    tau1 <- 1 / ( sigma1 * sigma1)
+    sigma1 ~ dunif(0, 10) 		# Note: Large var. = Small precision
+    tau2 <- 1 / ( sigma2 * sigma2)
+    sigma2 ~ dunif(0, 10)
+    
+    # Derived quantities
+    delta <- mu2 - mu1
+    }
+    

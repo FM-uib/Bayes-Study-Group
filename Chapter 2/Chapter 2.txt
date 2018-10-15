@@ -1,3 +1,5 @@
+Exercise
+
 Compute the probability of having the disease
 
 First probability of positive test result
@@ -8,7 +10,7 @@ p(+) = p(+|D) * p(D) + p(+|not D) * p(not D)
 
 p(+) = .99 * .05 + (1-.95) * .95 = 0.097
 
-p(D|+) = p(+|D) * p(D) / P(+)
+p(D|+) = p(+|D) * p(D) / p(+)
 
 p(D|+) = .99 * .05 / .097 = .5103
 
