@@ -51,7 +51,7 @@ plot(table(sample), lwd = 3, ylab = "Frequency")
 # 6.3 Snake Example
 
 # Dataset
-mass <- c(6, 8,5,7,9,11)
+mass <- c(6,8,5,7,9,11)
 pop <- factor(c(1,1,2,2,3,3))
 region <- factor(c(1,1,1,1,2,2))
 hab <- factor(c(1,2,3,1,2,3))

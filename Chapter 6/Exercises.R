@@ -7,6 +7,7 @@ theme_set(theme_classic())
 data <- data.frame(mass = c(6,8,11, 5,7,11, 6,9,11),
                    pop = factor(c(1,1,1, 2,2,2, 3,3,3)),
                    svl = c(40, 45,53, 39,50,61, 41,52,57))
+ggplot(data = data,aes(svl, mass, color = pop))+geom_point(size = 4)
 
 # Main effects model 
 # effect parameterization
@@ -32,16 +33,16 @@ fm <- lm(mass ~ Xm-1, data = data)
 plot.df <- data.frame(intercept = fm$coefficients[1:3],
                       slope = fm$coefficients[4:6],
                       pop = levels(data$pop))
-I.eff <- ggplot(data = data,aes(svl, mass, color = pop))+geom_point()+
+I.eff <- ggplot(data = data,aes(svl, mass, color = pop))+geom_point(size = 4)+
   geom_abline(data = plot.df , aes(intercept = intercept, slope = slope, color = pop))
 
 #################################################################################
 #Solution from Companion website:
 
 # Dataset
-mass <- c(6, 8,5,7,9,11)
+mass <- c(6,8,5,7,9,11)
 pop <- factor(c(1,1,2,2,3,3))
-svl <- c(40, 45,39,50,52,57)
+svl <- c(40,45,39,50,52,57)
 
 fm <- lm(mass ~ pop*svl)			# Fully interactive model which uses up all d.f.
 summary(fm)

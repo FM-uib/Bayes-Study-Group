@@ -23,10 +23,9 @@ model<-"
     "
 model.spec <- textConnection(model)
 
-
 # Exercises
 
-# 1 Informative Priors:
+# 1. Informative Priors:
 # We have knowledge that the weight of falcons varies between 500 and 590
 # experiment with the prior for the standard deviation
 
@@ -34,8 +33,7 @@ model.spec <- textConnection(model)
 data <- list(mass = y1000, nobs = length(y1000))
 
 # Function to generate starting values
-inits <- list(population.mean = rnorm(1,550), 
-              population.sd = runif(1, 1, 30))
+inits <- function() list(population.mean = rnorm(1,550), population.sd = runif(1, 1, 30))
 
 # Parameters to be monitored (= to estimate)
 params <- c("population.mean", 
@@ -64,7 +62,7 @@ ggplot(data = mean.550.wide.prior, aes(x = population.mean))+geom_density(fill =
 # density with mean of the data outside of prior
 ggplot(data = mean.600.wide.prior, aes(x = population.mean))+ geom_density(fill = "grey80")
 
-# 2 Run the model with the small and large dataset and explain the differences
+# 2. Run the model with the small and large dataset and explain the differences
 
 y10 <- rnorm(n = 10, mean = 600, sd = 30) # Sample of 10 birds
 y1000 <- rnorm(n = 1000, mean = 600, sd = 30) # Sample of 1000 birds
@@ -115,3 +113,94 @@ xlim = c(450, 750)
 par(mfrow = c(2,1))
 hist(y10, col = 'grey ', xlim = xlim, main = 'Body mass (g) of 10 male peregrines')
 hist(y1000, col = 'grey', xlim = xlim, main = ' Body mass (g) of 1000 male peregrines')
+
+# 5. Derived quantities estimate the coefficient of variation CV = SD/mean
+# report a point estimate with SE and draw posterior
+
+model<-"
+    model {
+# Likelihood
+for(i in 1:nobs){
+mass[i] ~ dnorm(population.mean, precision) # Normal parameterized by precision
+}
+
+# Priors
+population.mean ~ dunif(0,1000)		
+precision <- 1 / population.variance	# Precision = 1/variance
+population.variance <- population.sd * population.sd
+population.sd ~ dunif(0,100)
+
+# Derived quantities
+CV <- population.sd/population.mean
+}
+"
+model.spec <- textConnection(model)
+
+data <- list(mass = y1000, nobs = length(y1000))
+
+inits <- function() list(population.mean = rnorm(1,550), population.sd = runif(1, 1, 30))
+
+params <- c("population.mean", 
+            "population.sd", 
+            "population.variance",
+            "CV")
+
+jagsModel <- jags.model(file= model.spec,
+                        data=data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+plot(Samples)
+summary(Samples)
+
+# CV: mean = 0.05 SD = 0.001; CI 95% 0.048 - 0.052
+
+# 6. Fit the model of the mean to the hares data set. report the mean, SE of mean 
+# and a 95% CI for the mean hare density
+
+hares <- read.table(file = here("data","hares.data.txt"), header = TRUE)
+hares <- hares[!is.na(hares$mean.density),]
+
+model<-"
+    model {
+# Likelihood
+for(i in 1:nobs){
+mass[i] ~ dnorm(population.mean, precision) # Normal parameterized by precision
+}
+
+# Priors
+population.mean ~ dunif(0,1000)		
+precision <- 1 / population.variance	# Precision = 1/variance
+population.variance <- population.sd * population.sd
+population.sd ~ dunif(0,100)
+
+# Derived quantities
+CV <- population.sd/population.mean
+}
+"
+model.spec <- textConnection(model)
+
+data <- list(mass = hares$mean.density, nobs = nrow(hares))
+
+inits <- function() list(population.mean = rnorm(1), population.sd = runif(1))
+
+params <- c("population.mean", 
+            "population.sd", 
+            "population.variance",
+            "CV")
+
+jagsModel <- jags.model(file= model.spec,
+                        data=data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+plot(Samples)
+summary(Samples)
+
+# mean hare density 4.736; SE 0.0027; 95% CI 4.431 - 5.029

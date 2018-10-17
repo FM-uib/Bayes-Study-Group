@@ -1,5 +1,6 @@
 library(rjags)
 library(here)
+library(dplyr)
 
 # Exercise
 source(here("functions","data_gen.R")) # load Dataset generator
@@ -17,9 +18,9 @@ dat <- data[c("y1", "y2", "n1", "n2")]
 params <- c("mu1","mu2", "delta", "delta.s", "sigma1", "sigma2")
 
 # Inits function
-inits <- list(mu1 = rnorm(1), mu2 = rnorm(1), sigma1 = rlnorm(1), sigma2 = rlnorm(1))
+inits <- function() list(mu1 = rnorm(1), mu2 = rnorm(1), sigma1 = rlnorm(1), sigma2 = rlnorm(1))
 
-jagsModel <- jags.model(file = "models/v.ttest.txt",
+jagsModel <- jags.model(file = here("models","v.ttest.txt"),
                         data = dat,
                         init = inits,
                         n.chains = 3, 
@@ -45,13 +46,13 @@ boxplot(data$y ~ data$x, col = "grey", xlab = "Male", ylab = "Wingspan (cm)", la
 dat <- data[c("y","x","n")]
 
 # Inits function
-inits <- list(mu1 = rnorm(1), delta = rnorm(1), sigma = runif(1))
+inits <- function() list(mu1 = rnorm(1), delta = rnorm(1), sigma = runif(1))
 
 # Parameters to estimate
 params <- c("mu1","mu2", "delta", "sigma")
 
 # Set up Model
-jagsModel <- jags.model(file = "models/ttest.txt",
+jagsModel <- jags.model(file = here("models","ttest.txt"),
                         data = dat,
                         init = inits,
                         n.chains = 3, 
@@ -71,7 +72,7 @@ summary(Samples)
 # 3. Fit a t-test to the mean density in arable and grassland sites. assume unequal variances
 # test for a difference in variances
 
-hares <- read.table(file = "data/hares.data.txt", header = TRUE)
+hares <- read.table(file = here("data","hares.data.txt"), header = TRUE)
 
 # removes NAs, mean over the different years. alternatively only take last X years.
 # to avoid pseudoreplication
@@ -92,7 +93,7 @@ dat <- list(y1 = arable$mean.density,
              y2 = grass$mean.density, 
              n1 = nrow(arable), 
              n2 = nrow(grass))
-inits <- list(mu1 = rnorm(1), mu2 = rnorm(1), sigma1 = runif(1), sigma2 = runif(1))
+inits <- function() list(mu1 = rnorm(1), mu2 = rnorm(1), sigma1 = runif(1), sigma2 = runif(1))
   
 params <- c("mu1","mu2", "delta", "delta.s", "sigma1", "sigma2")
 
@@ -119,7 +120,7 @@ CI(Samples, "delta")
 # 4. fit a t-test to the mean.density in arable and grassland.
 # introduce a log linear regression of variance over elevation
 
-file.show("models/vreg.ttest.txt")
+file.show(here("models","vreg.ttest.txt"))
 
 hares.ymean <- hares %>%
   filter(!is.na(mean.density) & !is.na(elevation)) %>% # filter out NAs
@@ -142,13 +143,13 @@ dat <- list(y1 = arable$mean.density,
             e1 = ((arable$elevation - mean(arable$elevation)) / sd(arable$elevation)),
             e2 = ((grass$elevation - mean(grass$elevation)) / sd(grass$elevation)))
 
-inits <- list(mu1 = rnorm(1), mu2 = rnorm(1),
+inits <-function() list(mu1 = rnorm(1), mu2 = rnorm(1),
               a1 = rnorm(1), a2 = rnorm(1),
               b1 = rnorm(1), b2 = rnorm(1))
 
 params2 <- c("mu1", "mu2", "a1", "b1","a2", "b2", "delta", "delta.s")
 
-jagsModel <- jags.model(file = "models/vreg.ttest.txt",
+jagsModel <- jags.model(file = here("models","vreg.ttest.txt"),
                         data = dat,
                         init = inits,
                         n.chains = 3, 
@@ -161,10 +162,10 @@ plot(Samples)
 summary(Samples)
 
 # the mean density in arable plots is 4.71 and 2.98 in grass plots d = 1.72
+
 1-CI(Samples, "b1")
 1-CI(Samples, "b2")
-
 # in addition there seems to be a negative relationship between variance and
 # elevation. in arable  ~88% of posterior != 0 and in grass only ~65%. There seems to
-# be difference in how variance changes with elevation, much stronger negative 
+# be a difference in how variance changes with elevation, much stronger negative 
 # relationship in arable than grassland plots. 

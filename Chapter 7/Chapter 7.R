@@ -2,16 +2,9 @@ library(here)
 library(rjags)
 # 7.1. T-test with equal variances
 
-
 # 7.1.2. Data generation
-data.fn <- function(n1 = 60, n2 = 40, mu1 = 105, mu2 = 77.5, sigma1 = 2.75, sigma2 = 2.75){
-  n <- n1+n2				# Total sample size
-  y1 <- rnorm(n1, mu1, sigma1)		# Data for females
-  y2 <- rnorm(n2, mu2, sigma2)		# Date for males
-  y <- c(y1, y2)				# Aggregate both data sets
-  x <- rep(c(0,1), c(n1, n2))		# Indicator for male
-  return(list(x = x, y = y, y1 = y1, y2 = y2, n = n, n1 = n1, n2 = n2))
-}
+source(here("functions","data_gen.R"))
+
 # means parameteriztion
 n1 <- 60				# Number of females
 n2 <- 40				# Number of males
@@ -34,7 +27,6 @@ E.y <- alpha + beta*x			# Expectation
 y.obs <- rnorm(n = n, mean = E.y, sd = sigma)	# Add random variation
 boxplot(y.obs ~ x, col = "grey", xlab = "Male", ylab = "Wingspan (cm)", las = 1)
 
-
 ### 7.1.3. Analysis using R
 fit1 <- lm(y ~ x)			# Analysis of first data set
 fit2 <- lm(y.obs ~ x)			# Analysis of second data set
@@ -46,7 +38,6 @@ anova(fit2)
 
 model.matrix(fit1)
 model.matrix(fit2)
-
 
 ### 7.1.4. Analysis using rJAGS
 # Define BUGS model
@@ -75,11 +66,11 @@ cat("
 sink()
 
 # Bundle data
-data <- data.fn()
+data <- falcons.ws()
 dat <- data[c("x", "y", "n")]
 
 # Inits function
-inits <- list(mu1 = rnorm(1), delta = rnorm(1), sigma = rlnorm(1)) # try uniform mu1 = rnorm(1), 
+inits <- function() list(mu1 = rnorm(1), delta = rnorm(1), sigma = rlnorm(1)) # try uniform mu1 = rnorm(1), 
 
 # Parameters to estimate
 params <- c("mu1","mu2", "delta", "sigma")
@@ -97,12 +88,10 @@ Samples <- coda.samples(jagsModel,
 plot(Samples)
 summary(Samples)
 
-
-
 ### 7.2. T-test with unequal variances
 
 ### 7.2.2. Data generation
-data <- data.fn(sigma1 = 3, sigma2 = 2.5)
+data <- falcons.ws(sigma1 = 3, sigma2 = 2.5)
 
 boxplot(data$y ~ data$x, col = "grey", xlab = "Male", ylab = "Wingspan (cm)", las = 1)
 
@@ -143,7 +132,7 @@ sink()
 dat <- data[c("y1", "y2", "n1", "n2")] 
 
 # Inits function
-inits <- list(mu1 = rnorm(1), mu2 = rnorm(1), sigma1 = rlnorm(1), sigma2 = rlnorm(1))
+inits <- function() list(mu1 = rnorm(1), mu2 = rnorm(1), sigma1 = rlnorm(1), sigma2 = rlnorm(1))
 
 # Parameters to estimate
 params <- c("mu1","mu2", "delta", "sigma1", "sigma2")
@@ -163,4 +152,4 @@ summary(Samples)
 
 # Questions:
 # Why log transformed initial values for sigma
-# Don't want negative sd
+# We don't want negative sd

@@ -41,7 +41,8 @@ model.spec <- textConnection(model)
 data <- list(mass = y1000, nobs = length(y1000))
 
 # Function to generate starting values
-inits <- list(population.mean = rnorm(1,580), population.sd = runif(1, 1, 30))
+inits <- function(){
+  list(population.mean = rnorm(1,580), population.sd = runif(1, 1, 30))}
 
 # Parameters to be monitored (= to estimate)
 params <- c("population.mean", "population.sd", "population.variance")
