@@ -2,7 +2,7 @@ library(rjags)
 library(ggplot2)
 theme_set(theme_classic())
 
-# Exercise
+w# Exercise
 # Extend the dataset to remove perfect fit.
 data <- data.frame(mass = c(6,8,11, 5,7,11, 6,9,11),
                    pop = factor(c(1,1,1, 2,2,2, 3,3,3)),

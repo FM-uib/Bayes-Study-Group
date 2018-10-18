@@ -78,7 +78,7 @@ model {
 model.spec <- textConnection(model)
 
 Data <- list(mass = mass, nobs = length(mass))
-inits.fn <- list(mean = runif(0,100), sd = runif(0,10))
+inits.fn <- function() list(mean = runif(0,100), sd = runif(0,10))
 jagsModel <- jags.model(file= model.spec,
                         data=Data,
                         init = inits.fn,
