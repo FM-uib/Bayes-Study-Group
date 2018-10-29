@@ -10,8 +10,8 @@
     }
     
     # Priors
-    mu1 ~ dnorm(0,0.001)
-    mu2 ~ dnorm(0,0.001)
+    mu1 ~ dunif(0,1000)
+    mu2 ~ dunif(0,1000)
     tau1 <- 1 / ( sigma1 * sigma1)
     sigma1 ~ dunif(0, 10) 
     tau2 <- 1 / ( sigma2 * sigma2)

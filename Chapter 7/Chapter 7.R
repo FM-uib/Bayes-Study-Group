@@ -42,7 +42,10 @@ model.matrix(fit2)
 ### 7.1.4. Analysis using rJAGS
 # Define BUGS model
 
-sink(paste(here(),"Chapter 7","ttest.txt", sep = "/"))
+# In contrast to the book I defined uninformed uniform priors to the expected mean
+# and the delta. The results are the same.
+
+sink(here("Chapter 7","ttest.txt"))
 cat("
     model {
 
@@ -54,8 +57,8 @@ cat("
     }
 
     # Priors
-    mu1 ~ dnorm(0,0.001)		# expected mean, female wingspan	
-    delta ~ dnorm(0,0.001)			# difference, male from female wingspan
+    mu1 ~ dunif(0,500)		# expected mean, female wingspan	
+    delta ~ dunif(-100,100)			# difference, male from female wingspan
     tau <- 1/ (sigma * sigma) # Precision = 1/variance
     sigma ~ dunif(0, 50)      # standard deviation
     
@@ -70,13 +73,13 @@ data <- falcons.ws()
 dat <- data[c("x", "y", "n")]
 
 # Inits function
-inits <- function() list(mu1 = rnorm(1), delta = rnorm(1), sigma = rlnorm(1)) # try uniform mu1 = rnorm(1), 
+inits <- function() list(mu1 = runif(1), delta = runif(1), sigma = rlnorm(1)) # try uniform mu1 = rnorm(1), 
 
 # Parameters to estimate
 params <- c("mu1","mu2", "delta", "sigma")
 
 # Set up Model
-jagsModel <- jags.model(file = "Chapter 7/ttest.txt",
+jagsModel <- jags.model(file = here("Chapter 7","ttest.txt"),
                         data = dat,
                         init = inits,
                         n.chains = 3, 
@@ -102,7 +105,7 @@ t.test(data$y ~ data$x)
 
 ### 7.2.4. Analysis using rJAGS
 # Define BUGS model
-sink(paste(here(),"Chapter 7","h.ttest.txt", sep = "/"))
+sink(here("Chapter 7","h.ttest.txt"))
 cat("
     model {
     # Likelihood
@@ -115,8 +118,8 @@ cat("
     }
     
     # Priors
-    mu1 ~ dnorm(0,0.001)
-    mu2 ~ dnorm(0,0.001)
+    mu1 ~ dunif(0,1000)
+    mu2 ~ dunif(0,1000)
     tau1 <- 1 / ( sigma1 * sigma1)
     sigma1 ~ dunif(0, 10) 
     tau2 <- 1 / ( sigma2 * sigma2)
@@ -132,7 +135,7 @@ sink()
 dat <- data[c("y1", "y2", "n1", "n2")] 
 
 # Inits function
-inits <- function() list(mu1 = rnorm(1), mu2 = rnorm(1), sigma1 = rlnorm(1), sigma2 = rlnorm(1))
+inits <- function() list(mu1 = runif(1,0,1000), mu2 = runif(1,0,1000), sigma1 = rlnorm(1), sigma2 = rlnorm(1))
 
 # Parameters to estimate
 params <- c("mu1","mu2", "delta", "sigma1", "sigma2")

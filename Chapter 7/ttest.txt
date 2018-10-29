@@ -9,8 +9,8 @@
     }
 
     # Priors
-    mu1 ~ dnorm(0,0.001)		# expected mean, female wingspan	
-    delta ~ dnorm(0,0.001)			# difference, male from female wingspan
+    mu1 ~ dunif(0,500)		# expected mean, female wingspan	
+    delta ~ dunif(-100,100)			# difference, male from female wingspan
     tau <- 1/ (sigma * sigma) # Precision = 1/variance
     sigma ~ dunif(0, 50)      # standard deviation
     
