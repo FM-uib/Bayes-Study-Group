@@ -166,6 +166,6 @@ summary(Samples)
 1-CI(Samples, "b1")
 1-CI(Samples, "b2")
 # in addition there seems to be a negative relationship between variance and
-# elevation. in arable  ~88% of posterior != 0 and in grass only ~65%. There seems to
+# elevation. in arable  ~88% of posterior < 0 and in grass only ~65%. There seems to
 # be a difference in how variance changes with elevation, much stronger negative 
 # relationship in arable than grassland plots. 

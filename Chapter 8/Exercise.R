@@ -8,6 +8,10 @@ frogs <- data.frame(mass = c(10,20,23,32,35),
 
 # length[i] = a + b * weight[i] + e[i] and e is normal(0, sigma2)
 
+5 = a * 1 + b * 10 + r1
+7 = a * 1 + b * 20 + r2
+
+
 plot(frogs$length, frogs$mass, 
      xlab = "length", ylab = "mass")
 
