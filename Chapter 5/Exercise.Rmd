@@ -1,0 +1,219 @@
+---
+title: "Chapter 5 - Exercises"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+Load required Packages for the Exercises and set a seed for reproducability 
+
+```{r message=FALSE, error=FALSE}
+library(here)
+library(rjags)
+library(ggplot2)
+theme_set(theme_classic())
+set.seed(101)
+
+```
+
+Write the model of the mean into a file and generate two datasets.
+
+```{r}
+# Generate two samples of body mass measurements of male peregrines
+y10 <- rnorm(n = 10, mean = 600, sd = 30) # Sample of 10 birds
+y1000 <- rnorm(n = 1000, mean = 600, sd = 30) # Sample of 1000 birds
+
+model<-"
+    model {
+    # Likelihood
+    for(i in 1:nobs){
+    mass[i] ~ dnorm(population.mean, precision) # Normal parameterized by precision
+    }
+
+    # Priors
+    population.mean ~ dunif(0,1000)		
+    precision <- 1 / population.variance	# Precision = 1/variance
+    population.variance <- population.sd * population.sd
+    population.sd ~ dunif(0,100)
+    }
+    "
+model.spec <- textConnection(model)
+```
+
+2. Exercise 
+Run the model with the small and large dataset and explain the differences.
+The model assumes wide uninformed priors for both mean and standard deviation.
+We bundle and run the model two times with both datasets. The init and params stay the same for both models.
+```{r}
+data1 <- list(mass = y1000, nobs = length(y1000))
+data2 <- list(mass = y10, nobs = length(y10))
+
+inits <- list(population.mean = rnorm(1,550), 
+              population.sd = runif(1, 1, 30))
+
+params <- c("population.mean", 
+            "population.sd", 
+            "population.variance")
+
+model.spec <- textConnection(model)
+jagsModel1 <- jags.model(file= model.spec,
+                        data=data1,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+
+model.spec <- textConnection(model)
+jagsModel2 <- jags.model(file= model.spec,
+                        data=data2,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+
+Samples1 <- coda.samples(jagsModel1, 
+                        variable.names = params, 
+                        n.iter = 1000)
+
+Samples2 <- coda.samples(jagsModel2, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+Plot the results for the large dataset. n = 1000
+
+```{r}
+plot(Samples1)
+```
+
+Plot the results for the small dataset. n = 10
+
+```{r}
+plot(Samples2)
+```
+
+The estimate for standard deviation and variance are skewed, mainly caused by the low sample size.
+The model tries to accomodate the the data, but since it is skewed the marginal distribution will also be skewed.
+
+Next we plot the data again. The means are different, with the large sample being closer to the true mean of the data generator (600).
+
+```{r}
+xlim = c(450, 750)
+par(mfrow = c(2,1))
+hist(y10, col = 'grey ', xlim = xlim, 
+     main = paste('Body mass (g) of 10 male peregrines; mean:',
+                  round(mean(do.call(rbind,Samples2)[,1]),1)))
+hist(y1000, col = 'grey', xlim = xlim, 
+     main = paste('Body mass (g) of 1000 male peregrines; mean:',
+                  round(mean(do.call(rbind,Samples1)[,1]),1)))
+```
+
+5. Derived quantities
+
+The Bayesian framework and the Bugs model language is very flexible in handling derived calculations. 
+We can specify any kind of formula or variable that we want to know about and estimate it during sampling.
+In the following model we added a line of code to calculate the coefficient of variance.
+The following lines of code will fit the model to the large dataset like we did in the previous exercises.
+
+```{r}
+model<-"
+    model {
+# Likelihood
+for(i in 1:nobs){
+mass[i] ~ dnorm(population.mean, precision) # Normal parameterized by precision
+}
+
+# Priors
+population.mean ~ dunif(0,1000)		
+precision <- 1 / population.variance	# Precision = 1/variance
+population.variance <- population.sd * population.sd
+population.sd ~ dunif(0,100)
+
+# Derived quantities
+CV <- population.sd/population.mean
+}
+"
+model.spec <- textConnection(model)
+
+data <- list(mass = y1000, nobs = length(y1000))
+
+inits <- function() list(population.mean = runif(1,0,1000), population.sd = runif(1, 1, 100))
+
+params <- c("population.mean", 
+            "population.sd", 
+            "population.variance",
+            "CV")
+
+jagsModel <- jags.model(file= model.spec,
+                        data=data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 200)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+The estimates CV is below with a 95% confidence interval. We are 95% sure that the CV for our falcon population is between 0.047 and 0.05.
+
+```{r}
+CV_estimate <- do.call(rbind,Samples)[,1]
+
+cat("CV mean:", round(mean(CV_estimate),3),
+    "\nConfidence interval\n    5%  95%\n", round(quantile(CV_estimate, probs = c(.05,.95)), 3), 
+    "\n")
+```
+
+We can plot the posterior distribution.
+
+```{r}
+CV <- data.frame(CV = CV_estimate)
+ggplot(data = CV, aes(x = CV))+ geom_density(fill = "grey80")
+```
+
+6. Fit the model of the mean to the hares data set. report the mean, SE of mean and a 95% CI for the mean hare density
+First we load the dataset and filter it for empty entries.
+
+```{r}
+hares <- read.table(file = here("data","hares.data.txt"), header = TRUE)
+hares <- hares[!is.na(hares$mean.density),]
+```
+
+We can use the same model as before.
+Afterwards as before the data is bundled, the model initiated and estimates are drawn from the posterior.
+
+```{r}
+model.spec <- textConnection(model)
+
+data <- list(mass = hares$mean.density, nobs = nrow(hares))
+
+inits <- function() list(population.mean = runif(1, 0, 1000), population.sd = runif(1, 0, 100))
+
+params <- c("population.mean", 
+            "population.sd", 
+            "population.variance",
+            "CV")
+
+jagsModel <- jags.model(file= model.spec,
+                        data=data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+The mean estimate of the hare density and standard error is below, with confidence interval for the mean.
+
+```{r}
+hare_means <- data.frame(density = do.call(rbind,Samples)[,2], sd = do.call(rbind,Samples)[,3])
+
+cat("hare mean density:", round(mean(hare_means$density),2),"\nSE:", round(mean(hare_means$sd),2),
+    "\n\nConfidence interval of the mean\n    5%  95%\n", round(quantile(hare_means$density, probs = c(.05,.95)), 3)) 
+```
+
+Marginal estimate for the mean hare density
+
+```{r}
+ggplot(data = hare_means, aes(x = density))+ geom_density(fill = "grey80")
+```
+

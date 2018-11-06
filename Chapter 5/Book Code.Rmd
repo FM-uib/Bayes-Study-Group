@@ -1,0 +1,98 @@
+---
+title: "Chapter 5 - Book Code"
+output:
+  html_document: default
+  html_notebook: default
+---
+Load required Packages for this Chapter and set a seed for reproducability
+
+```{r message = FALSE}
+require(here)
+require(rjags)
+set.seed(101)
+```
+
+5.2 Data Generation
+
+Generate two samples of body mass measurements of male peregrines and plot them.
+
+```{r}
+y10 <- rnorm(n = 10, mean = 600, sd = 30) # Sample of 10 birds
+y1000 <- rnorm(n = 1000, mean = 600, sd = 30) # Sample of 1000 birds
+
+xlim = c(450, 750)
+par(mfrow = c(2,1))
+hist(y10, col = 'grey ', xlim = xlim, main = 'Body mass (g) of 10 male peregrines')
+hist(y1000, col = 'grey', xlim = xlim, main = ' Body mass (g) of 1000 male peregrines')
+```
+
+Next we fit a simple linear model of the mean to the data of 1000 peregrine falcons.
+The estimated mean is 607, slightly off from our value given in the data generation in rnorm()
+
+```{r}
+summary(lm(y10 ~ 1))
+```
+
+5.4 Model of the mean in RJAGS
+
+We fit the model of the mean in the Bayes way with rjags.
+First the model description is saved.
+The normal distribution is specified by precision instead of standardvariation.
+We specify the priors as flat priors. For the mean, we assume prior knowledge of a possible mean between 500 and 700 g of weight. 
+
+```{r}
+model<-"
+    model {
+    # Likelihood
+    for(i in 1:nobs){
+    mass[i] ~ dnorm(population.mean, precision)
+    }
+
+    # Priors
+    population.mean ~ dunif(500,700)		
+    precision <- 1 / population.variance
+    population.variance <- population.sd * population.sd
+    population.sd ~ dunif(0,100)
+    }
+    "
+model.spec <- textConnection(model)
+```
+
+Next, the data is bundled, the starting values are initiated and the parameters that we want to observe (estimate) are saved in params. 
+The last two commands initialize the model and the description is checked for inconsistencies. Furthermore the burn-in phase of the Markov Chain is run and the parameters were estimated.
+The coda.samples() command draws the actual samples from the posterior.
+
+```{r message = FALSE}
+# Bundle data
+data <- list(mass = y1000, nobs = length(y1000))
+
+# Function to generate starting values
+inits <- function(){
+  list(population.mean = runif(1,500,700), population.sd = runif(1, 1, 30))}
+
+# Parameters
+params <- c("population.mean", "population.sd", "population.variance")
+
+jagsModel <- jags.model(file= model.spec,
+                        data=data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+Lastly we plot the results from the Markov-Chain and check for Convergence.
+
+```{r}
+plot(Samples)
+```
+
+Here are the outputs from the analyses, where we can see the mean and standard deviation that we estimated using the Bayesian model of the mean.
+We have mean and standard deviation for our estimates as well as quantiles for each variable.
+
+```{r}
+summary(Samples)
+```
+
