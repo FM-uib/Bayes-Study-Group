@@ -1,0 +1,79 @@
+---
+title: "Chapter 9 - Book Code"
+output: html_notebook
+---
+
+# Chapter 9: Normal one-way ANOVA 
+Load required Packages for this Chapter and set a seed for reproducability
+
+```{r}
+require(here)
+require(rjags)
+set.seed(101)
+```
+
+# 9.2 Fixed Effect ANOVA
+First we generate the necessary data.
+
+```{r}
+ngroups <- 5				                  # Number of populations
+nsample <- 10			                	  # Number of snakes in each
+pop.means <- c(50, 40, 45, 55, 60) 	  # Population mean SVL
+sigma <- 3				                    # Residual sd
+
+n <- ngroups * nsample 			          # Total number of data points
+eps <- rnorm(n, 0, sigma)	           	# Residuals 
+x <- rep(1:5, rep(nsample, ngroups)) 	# Indicator for population
+means <- rep(pop.means, rep(nsample, ngroups))
+X <- as.matrix(model.matrix(~ as.factor(x)-1)) # Create design matrix
+y <- as.numeric(X %*% as.matrix(pop.means) + eps) # assemble -- NOTE: as.numeric ESSENTIAL for WinBUGS
+
+boxplot(y~x, col="grey", xlab="Population", ylab="SVL", main="", las = 1)
+
+```
+
+# 9.2.2. Maximum likelihood analysis using R
+We recognize the input variables fairly well in the results.
+R does effect parameterization as default. It is reparameterized to means in the code below to increase clarity.
+```{r}
+lm<-lm(y~as.factor(x)-1)
+print(anova(lm(y~as.factor(x)-1)))
+cat("\n\n")
+print(lm$coeff, dig = 3)
+cat("Sigma:         ",summary(lm)$sigma, "\n\n")
+rbind(lm$coefficients,pop.means)
+```
+
+# 9.2.3. Bayesian analysis
+
+```{r}
+model<-"
+model {
+
+# Priors
+ for (i in 1:5){			# Implicitly define alpha as a vector
+    alpha[i] ~ dnorm(0, 0.001)
+ }
+ sigma ~ dunif(0, 100)
+
+# Likelihood
+ for (i in 1:50) {
+    y[i] ~ dnorm(mean[i], tau) 
+    mean[i] <- alpha[x[i]]
+ }
+
+# Derived quantities
+ tau <- 1 / ( sigma * sigma)
+ effe2 <- alpha[2] - alpha[1]
+ effe3 <- alpha[3] - alpha[1]
+ effe4 <- alpha[4] - alpha[1]
+ effe5 <- alpha[5] - alpha[1]
+
+# Custom hypothesis test / Define your own contrasts
+ test1 <- (effe2+effe3) - (effe4+effe5) # Equals zero when 2+3 = 4+5
+ test2 <- effe5 - 2 * effe4 		# Equals zero when effe5 = 2*effe4
+}
+"
+model.spec <- textConnection(model)
+```
+
