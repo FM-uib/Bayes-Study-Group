@@ -6,7 +6,7 @@ output: html_notebook
 # Chapter 9: Normal one-way ANOVA 
 Load required Packages for this Chapter and set a seed for reproducability
 
-```{r}
+```{r message=FALSE}
 require(here)
 require(rjags)
 set.seed(101)
@@ -45,29 +45,33 @@ rbind(lm$coefficients,pop.means)
 ```
 
 # 9.2.3. Bayesian analysis
+Model description.
+The SVL (y) is normaly distributed around a mean. This mean depends on a population mean (pop.mean). These pop.means are independent of eachother. Our assumption for the pop.means is uniform distribution. 
 
+We further define custom hypotheses to test the differences between populations.
+Test 1 compares population 2/3 with 4/5. Test 2 tests if the effect of population 5 is 2 times that of population 4. 
 ```{r}
 model<-"
 model {
 
-# Priors
- for (i in 1:5){			# Implicitly define alpha as a vector
-    alpha[i] ~ dnorm(0, 0.001)
- }
- sigma ~ dunif(0, 100)
-
 # Likelihood
  for (i in 1:50) {
     y[i] ~ dnorm(mean[i], tau) 
-    mean[i] <- alpha[x[i]]
+    mean[i] <- pop.mean[x[i]]
  }
+
+# Priors
+ for (i in 1:5){			# Implicitly define alpha as a vector
+    pop.mean[i] ~ dunif(0, 100)
+ }
+ sigma ~ dunif(0, 100)
 
 # Derived quantities
  tau <- 1 / ( sigma * sigma)
- effe2 <- alpha[2] - alpha[1]
- effe3 <- alpha[3] - alpha[1]
- effe4 <- alpha[4] - alpha[1]
- effe5 <- alpha[5] - alpha[1]
+ effe2 <- pop.mean[2] - pop.mean[1]
+ effe3 <- pop.mean[3] - pop.mean[1]
+ effe4 <- pop.mean[4] - pop.mean[1]
+ effe5 <- pop.mean[5] - pop.mean[1]
 
 # Custom hypothesis test / Define your own contrasts
  test1 <- (effe2+effe3) - (effe4+effe5) # Equals zero when 2+3 = 4+5
@@ -75,5 +79,34 @@ model {
 }
 "
 model.spec <- textConnection(model)
+```
+
+Bundle all the necessary data and start the chains.
+
+```{r}
+data <- list("y"= y, "x" = x)
+
+inits <- function(){ list(pop.mean = runif(5, 0, 100), sigma = runif(1, 0, 100) )}
+
+params <- c("pop.mean", "sigma", "effe2", "effe3", "effe4", "effe5", "test1", "test2")
+
+jagsModel <- jags.model(file= textConnection(model),
+                        data=data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+
+```{r}
+mcmc <- data.frame(do.call(rbind, Samples))
+
+
+
+plot(Samples)
+summary(Samples)
 ```
 
