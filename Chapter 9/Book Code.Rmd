@@ -6,9 +6,10 @@ output: html_notebook
 # Chapter 9: Normal one-way ANOVA 
 Load required Packages for this Chapter and set a seed for reproducability
 
-```{r message=FALSE}
-require(here)
-require(rjags)
+```{r, message=FALSE, warning=FALSE}
+library(here)
+library(rjags)
+library("lme4")
 set.seed(101)
 ```
 
@@ -83,7 +84,7 @@ model.spec <- textConnection(model)
 
 Bundle all the necessary data and start the chains.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 data <- list("y"= y, "x" = x)
 
 inits <- function(){ list(pop.mean = runif(5, 0, 100), sigma = runif(1, 0, 100) )}
@@ -100,13 +101,112 @@ Samples <- coda.samples(jagsModel,
                         n.iter = 1000)
 ```
 
+With uninformed priors we can reconstruct the starting values we used for generating the dataset and the values are very close to the population means from the liner model.
+One advantage of Bayesian methods is the ease with which derived quantities can be estimated.
+Seen in the tests we conducted in this example.
 
 ```{r}
 mcmc <- data.frame(do.call(rbind, Samples))
+means <-rbind(colMeans(mcmc)[5:9], lm$coefficients, pop.means)
+rownames(means)<-c("Bayes", "lm", "data")
 
-
-
-plot(Samples)
 summary(Samples)
+
+means
 ```
 
+# 9.3 Random-Effects ANOVA
+
+
+```{r}
+rm(list = ls())
+set.seed(101)
+npop <- 10				# Number of populations: now choose 10 rather than 5
+nsample <- 12				# Number of snakes in each
+n <- npop * nsample			# Total number of data points
+
+pop.grand.mean <- 50			# Grand mean SVL
+pop.sd <- 5				# sd of population effects about mean
+pop.means <- rnorm(n = npop, mean = pop.grand.mean, sd = pop.sd)
+sigma <- 3				# Residual sd
+eps <- rnorm(n, 0, sigma) 		# Draw residuals
+
+x <- rep(1:npop, rep(nsample, npop))
+X <- as.matrix(model.matrix(~ as.factor(x)-1))
+y <- as.numeric(X %*% as.matrix(pop.means) + eps) # as.numeric is ESSENTIAL
+boxplot(y ~ x, col = "grey", xlab = "Population", ylab = "SVL", main = "", las = 1) # Plot of generated data
+abline(h = pop.grand.mean)
+```
+
+# 9.3.2. Restricted maximum likelihood (REML) analysis using R
+We are using a random effects ANOVA using the lme4 package.
+```{r}
+pop <- as.factor(x)			# Define x as a factor and call it pop
+
+lme.fit <- lmer(y ~ 1 + 1 | pop, REML = TRUE)
+lme.fit					# Inspect results
+rbind(t(50+ranef(lme.fit)$pop, pop.means))
+```
+
+# 9.3.3 Bayesian random effects ANOVA
+
+Next we fit a random effects model. 
+
+```{r}
+model<-"
+model {
+# Likelihood
+ for (i in 1:n) {
+    y[i] ~ dnorm(mean[i], tau.res)
+    mean[i] <- pop.mean[x[i]]
+ }
+
+# Priors and some derived things
+for (i in 1:npop){
+    pop.mean[i] ~ dnorm(mu, tau.group) 	# Prior for population means
+    effe[i] <- pop.mean[i] - mu 	# Population effects as derived quant’s
+ }
+ mu ~ dunif(0,100)			# Hyperprior for grand mean svl
+ sigma.group ~ dunif(0, 10)		# Hyperprior for sd of population effects
+ sigma.res ~ dunif(0, 10)		# Prior for residual sd
+
+# Derived quantities
+ tau.group <- 1 / (sigma.group * sigma.group)
+ tau.res <- 1 / (sigma.res * sigma.res)
+}
+"
+model.spec <- textConnection(model)
+```
+
+
+
+```{r, message=FALSE, warning=FALSE}
+data <- list("y"=y, "x"=x, "npop"= npop, "n" = n)
+
+# Inits function
+inits <- function(){ list(mu = runif(1, 0, 100), sigma.group = runif(1, 0, 10), sigma.res = runif(1, 0, 10) )}
+
+# Params to estimate
+params <- c("mu", "pop.mean", "effe", "sigma.group", "sigma.res")
+
+jagsModel <- jags.model(file= textConnection(model),
+                        data=data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+The estimates we get from the two models are quite similar.
+The among population standard deviation (Bayes: sigma.group = 4.7; lme: pop Std.Dev = 4.1) is more accurately estimated using the Bayesian model, remember the truth was 5. This may be due to the small sample size. 
+
+```{r}
+mcmc <- do.call(rbind, Samples)
+means <- rbind(colMeans(mcmc)[12:21], t(50+ranef(lme.fit)$pop), pop.means)
+rownames(means) <- c("Bayes", "lme", "data")
+lme.fit
+summary(Samples)
+means
+```
