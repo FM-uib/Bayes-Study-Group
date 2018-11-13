@@ -117,6 +117,7 @@ means
 
 # 9.3 Random-Effects ANOVA
 
+Data generation and plot.
 
 ```{r}
 rm(list = ls())
@@ -139,7 +140,9 @@ abline(h = pop.grand.mean)
 ```
 
 # 9.3.2. Restricted maximum likelihood (REML) analysis using R
-We are using a random effects ANOVA using the lme4 package.
+
+We are using a random effects ANOVA with the lme4 package.
+
 ```{r}
 pop <- as.factor(x)			# Define x as a factor and call it pop
 
