@@ -1,0 +1,18 @@
+
+    model {
+
+    # Likelihood
+    for (i in 1:n) {
+    y[i] ~ dnorm(mean[i], tau) 
+    mean[i] <- pop.mean[x[i]]
+    }
+
+    # Priors
+    for (i in 1:npop){			# Implicitly define alpha as a vector
+    pop.mean[i] ~ dunif(0, 100)
+    }
+    sigma ~ dunif(0, 100)
+
+    # Derived quantities
+    tau <- 1 / ( sigma * sigma)
+    }

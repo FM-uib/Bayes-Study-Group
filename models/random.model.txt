@@ -1,0 +1,21 @@
+
+    model {
+    # Likelihood
+    for (i in 1:n) {
+    y[i] ~ dnorm(mean[i], tau.res)
+    mean[i] <- pop.mean[x[i]]
+    }
+
+    # Priors and some derived things
+    for (i in 1:npop){
+    pop.mean[i] ~ dnorm(mu, tau.group) 	# Prior for population means
+    effe[i] <- pop.mean[i] - mu 	# Population effects as derived quant’s
+    }
+    mu ~ dunif(0,100)			# Hyperprior for grand mean svl
+    sigma.group ~ dunif(0, 100)		# Hyperprior for sd of population effects
+    sigma.res ~ dunif(0, 100)		# Prior for residual sd
+
+    # Derived quantities
+    tau.group <- 1 / (sigma.group * sigma.group)
+    tau.res <- 1 / (sigma.res * sigma.res)
+    }
