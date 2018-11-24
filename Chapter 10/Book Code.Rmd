@@ -1,0 +1,184 @@
+---
+title: "Chapter 10 - Book Code"
+output: html_notebook
+---
+
+# Chapter 10: Normal Two-way ANOVA
+
+In this chapter only fixed effects are considered. 
+
+```{r, message=FALSE}
+library(here)
+library(rjags)
+library(lattice)
+set.seed(101)
+```
+
+## 10.2 Data Generation
+
+```{r}
+# Choose sample size
+n.pop <- 5
+n.elev <- 3
+nsample <- 12
+n <- n.pop * nsample
+
+# Create factor levels
+pop <- gl(n = n.pop, k = nsample, length = n)
+elev <- gl(n = n.elev, k = nsample / n.elev, length = n)
+
+# Choose effects
+baseline <- 40	# Intercept
+pop.effects <- c(-10, -5, 5, 10) # Population effects
+elev.effects <- c(5, 10)	# Elev effects
+interaction.effects <- c(-2, 3, 0, 4, 4, 0, 3, -2)	# Interaction effects
+all.effects <- c(baseline, pop.effects, elev.effects, interaction.effects)
+
+sigma <- 3
+eps <- rnorm(n, 0, sigma)		# Residuals
+
+X <- as.matrix(model.matrix(~ pop*elev) ) # Create design matrix
+
+```
+
+```{r}
+wing <- as.numeric(as.matrix(X) %*% as.matrix(all.effects) + eps)
+	# NOTE: as.numeric is ESSENTIAL for WinBUGS later
+boxplot(wing ~ elev*pop, col = "grey", xlab = "Elevation-by-Population", ylab = "Wing length", 
+main = "Simulated data set", las = 1, ylim = c(20, 70))	# Plot of generated data
+abline(h = 40)
+```
+
+```{r}
+xyplot(wing ~ elev | pop, ylab = "Wing length", xlab = "Elevation", 
+main = "Population-specific relationship between wing and elevation class")
+```
+
+```{r}
+xyplot(wing ~ pop | elev, ylab = "Wing length", xlab = "Population", 
+main = "Elevation-specific relationship between wing and population")
+```
+
+```{r}
+lm(wing ~ pop*elev)
+all.effects
+
+n.iter <- 1000				# Desired number of iterations
+estimates <- array(dim = c(n.iter, length(all.effects))) # Data structure to hold results
+
+for(i in 1:n.iter) {			# Run simulation n.iter times
+   eps <- rnorm(n, 0, sigma)		# Residuals 
+   y <- as.numeric(as.matrix(X) %*% as.matrix(all.effects) + eps) # Assemble data
+   fit.model <- lm(y ~ pop*elev)	# Break down data
+   estimates[i,] <- fit.model$coefficients # Keep values of coefs.
+}
+
+print(apply(estimates, 2, mean), dig = 2)
+all.effects
+```
+
+## 10.4 Analysis using R
+
+```{r}
+mainfit <- lm(wing ~ elev + pop)
+mainfit
+
+intfit <- lm(wing ~ elev*pop-1-pop-elev)
+intfit
+```
+
+## 10.5. Analysis using rJags
+
+Main effects ANOVA
+```{r}
+model <- "model {
+# Likelihood
+ for (i in 1:n) {
+    wing[i] ~ dnorm(mean[i], tau) 
+    mean[i] <- alpha + beta.pop[pop[i]] + beta.elev[elev[i]]
+ }
+
+# Priors
+ alpha ~ dunif(0, 100)		# Intercept
+ beta.pop[1] <- 0			# set to zero effect of 1st level
+ beta.pop[2] ~ dunif(-100, 100)
+ beta.pop[3] ~ dunif(-100, 100)
+ beta.pop[4] ~ dunif(-100, 100)
+ beta.pop[5] ~ dunif(-100, 100)
+ beta.elev[1] <- 0			# ditto
+ beta.elev[2] ~ dunif(-100, 100)
+ beta.elev[3] ~ dunif(-100, 100)
+ sigma ~ dunif(0, 100)
+
+# Derived quantities
+ tau <- 1 / ( sigma * sigma)
+}
+"
+```
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+data <- list("wing" = wing,
+             "elev" = elev,
+             "pop" = pop,
+             "n" = length(wing))
+
+inits <- function(){ list(alpha = runif(1, 0, 100), sigma = runif(1, 0, 100) )}
+
+params <- c("alpha", "beta.pop", "beta.elev", "sigma")
+
+jagsModel <- jags.model(file= textConnection(model),
+                        data=data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+Interactions effects ANOVA
+
+```{r}
+model <- "model {
+
+# Likelihood
+ for (i in 1:n) {
+    wing[i] ~ dnorm(mean[i], tau) 
+    mean[i] <- group.mean[pop[i], elev[i]]
+ }
+
+# Priors
+ for (i in 1:n.pop){
+    for(j in 1:n.elev) {
+       group.mean[i,j] ~ dunif(0, 100)
+    }
+ }
+ sigma ~ dunif(0, 100)
+
+# Derived quantities
+ tau <- 1 / ( sigma * sigma)
+}"
+```
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+data <- list("wing" = wing,
+             "elev" = elev,
+             "pop" = pop,
+             "n" = length(wing),
+             "n.elev" = length(unique(elev)),
+             "n.pop" = length(unique(pop)))
+
+inits <- function(){ list(sigma = runif(1, 0, 100) )}
+
+params <- c("group.mean", "sigma")
+
+jagsModel <- jags.model(file= textConnection(model),
+                        data=data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+

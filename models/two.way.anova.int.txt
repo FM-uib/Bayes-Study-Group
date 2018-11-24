@@ -1,0 +1,20 @@
+    
+    model {
+
+    # Likelihood
+    for (i in 1:n) {
+    response[i] ~ dnorm(mean[i], tau) 
+    mean[i] <- group.mean[fac1[i], fac2[i]]
+    }
+
+    # Priors
+    for (i in 1:n.fac1){
+    for(j in 1:n.fac2) {
+       group.mean[i,j] ~ dunif(0, 100)
+    }
+    }
+    sigma ~ dunif(0, 100)
+
+    # Derived quantities
+    tau <- 1 / ( sigma * sigma)
+}

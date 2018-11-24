@@ -1,0 +1,54 @@
+---
+title: "Exercises"
+output: html_notebook
+---
+
+
+```{r}
+library(here)
+library(rjags)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+theme_set(theme_classic())
+```
+
+## Toy Snake Example
+
+Fit a two-way ANOVA with interaction to the toy example of Chapter 6 and see what happens to the non identifiable parameter.
+
+Create Dataset
+
+```{r}
+mass <- c(6,8,5,7,9,11)
+pop <- factor(c(1,1,2,2,3,3))
+region <- factor(c(1,1,1,1,2,2))
+hab <- factor(c(1,2,3,1,2,3))
+svl <- c(40, 45,39,50,52,57)
+```
+
+There is no data for snakes in region 2 habitat 1.
+
+```{r, include=FALSE}
+data <- list("response" = mass,
+             "fac1" = region,
+             "fac2" = hab,
+             "n" = length(mass),
+             "n.fac1" = length(unique(region)),
+             "n.fac2" = length(unique(hab)))
+
+inits <- function(){ list(sigma = runif(1, 0, 100) )}
+
+params <- c("group.mean", "sigma")
+
+jagsModel <- jags.model(file = here("models","two.way.anova.int.txt"),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+The bayesian analyses just samples from the prior in that case, because there is no data to estimate
