@@ -41,11 +41,12 @@ X <- as.matrix(model.matrix(~ pop*elev) ) # Create design matrix
 
 ```
 
+Print the data showing the effects of the different factors.
+
 ```{r}
 wing <- as.numeric(as.matrix(X) %*% as.matrix(all.effects) + eps)
-	# NOTE: as.numeric is ESSENTIAL for WinBUGS later
 boxplot(wing ~ elev*pop, col = "grey", xlab = "Elevation-by-Population", ylab = "Wing length", 
-main = "Simulated data set", las = 1, ylim = c(20, 70))	# Plot of generated data
+main = "Simulated data set", las = 1, ylim = c(20, 70))
 abline(h = 40)
 ```
 
@@ -90,6 +91,7 @@ intfit
 ## 10.5. Analysis using rJags
 
 Main effects ANOVA
+
 ```{r}
 model <- "model {
 # Likelihood
@@ -115,6 +117,8 @@ model <- "model {
 }
 "
 ```
+
+Bundle data and fit model.
 
 ```{r, message=FALSE, warning=FALSE, include=FALSE}
 data <- list("wing" = wing,
@@ -159,6 +163,8 @@ model <- "model {
  tau <- 1 / ( sigma * sigma)
 }"
 ```
+
+Bundle data and fit model.
 
 ```{r, message=FALSE, warning=FALSE, include=FALSE}
 data <- list("wing" = wing,

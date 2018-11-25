@@ -4,7 +4,7 @@ output: html_notebook
 ---
 
 
-```{r}
+```{r, include=FALSE}
 library(here)
 library(rjags)
 library(ggplot2)
@@ -51,4 +51,66 @@ Samples <- coda.samples(jagsModel,
                         n.iter = 1000)
 ```
 
-The bayesian analyses just samples from the prior in that case, because there is no data to estimate
+```{r}
+summary(Samples)
+```
+
+The bayesian analyses just samples from the prior for the combinations without data, because there is no data to estimate. We can see the much larger mean (50) and huge standard deviation matching our prior (uniform distribution from 0-100).
+
+## Swiss haredata
+Fit an ANOVA model to mean hare density to decide whether the effect of grassland and arable landuse is the same in all regions. Regions and landuse are somewhat confounded, but we ignore this here.
+
+Load hares data
+
+```{r}
+hares <- read.table(file = here("data","hares.data.txt"), header = TRUE)
+
+hares. <- hares %>%
+  filter(!is.na(mean.density))
+
+ggplot(hares., aes(x = region, y = mean.density)) + geom_boxplot()
+```
+
+```{r}
+boxplot(hares.$mean.density ~ hares.$region*hares.$landuse, col = "grey", xlab = "region-by-landuse", ylab = "mean density", 
+main = "Simulated data set", las = 2)
+```
+
+Fit the data to the two way ANOVA model. 
+
+```{r, include=FALSE}
+data <- list("response" = hares.$mean.density,
+             "fac1" = hares.$region,
+             "fac2" = hares.$landuse,
+             "n" = nrow(hares.),
+             "n.fac1" = length(unique(hares.$region)),
+             "n.fac2" = length(unique(hares.$landuse)))
+
+inits <- function(){ list(sigma = runif(1, 0, 100))}
+
+params <- c("group.mean", "sigma")
+
+jagsModel <- jags.model(file = here("models","two.way.anova.int.txt"),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+Plot the modelled data.
+
+```{r, message=FALSE, warning=FALSE}
+mcmc <- as.data.frame(do.call(rbind,Samples))
+haresdata.anova <- melt(mcmc[,-17])
+
+levels(haresdata.anova$variable)<- substring(levels(haresdata.anova$variable), 12,14)
+
+ggplot(haresdata.anova, aes(x = variable, y = value)) + geom_boxplot()+
+  ylim(0,25)
+```
+
+We see the effects of the interactions and similar to the toy snake example the model recreates the prior for combinations where data is missing.
+There does not seem to be any overarching effect of landuse on the mean density.
