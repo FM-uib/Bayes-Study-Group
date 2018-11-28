@@ -1,0 +1,155 @@
+---
+title: "Chapter 10 Exercises"
+output: html_notebook
+---
+
+```{r}
+library(rjags)
+library(coda)
+## to get markdown to work I needed to create the jags txt file in a regular R.script and source the script. Check BayesianDefinitionsExercises.R
+source('BayesianDefinitionsExercises.R')
+```
+
+
+## Exercise 1
+
+1) *Toy snake example:* fit a two-way ANOVA with interaction to the toy example of Chapter 6 and see what happens to the nonidentifiable parameters.
+
+```{r include=FALSE}
+## data
+mass <- c(6,8,5,7,9,11)
+pop <- factor(c(1,1,2,2,3,3))
+region <- factor(c(1,1,1,1,2,2))
+hab <- factor(c(1,2,3,1,2,3))
+sv1 <- c(40, 45, 39,50, 52,57)
+n.region <- length(unique(region))
+n.hab <- length(unique(hab))
+
+```
+a) Frequentist approach for the toy snake example 
+```{r}
+## 
+
+(mod1 <- lm(mass ~ region*hab - 1 - region - hab))
+
+```
+
+b) Now fitting the model to a Bayesian framwork: **mass ~ region*hab**
+
+```{r echo = T, results = "hide"}
+
+data <- list(mass = mass, 
+             region = as.numeric(region), 
+             hab = as.numeric(hab), 
+             n = length(mass),
+             n.region = n.region,
+             n.hab = n.hab)
+
+inits <- function() list(sigma = rlnorm(1)) 
+
+# Parameters to estimate
+params <- c("sigma", "group.mean")
+
+# Set up Model
+jagsModel <- jags.model(file = "Exercise1.Ch10.txt",
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 2000) # Burn-in
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 6000) #Draws from posterior
+
+```
+```{r}
+summary(Samples)
+summary(mod1)
+```
+
+
+c) check for convergence
+```{r}
+gelman.diag(Samples)
+gelman.plot(Samples)
+```
+
+Non-identifiability in a Bayesian analysis is perhaps slightly less easily diagnosed than in a 
+classical analysis, since there is always some information about a parameter: if there is none in 
+the data, then it comes from the prior. In our analysis, we have no information on snakes in habitat 
+1 in region 2, hence the posterior distribution for the associated parameter is determined by the 
+prior. We recognize that by the huge range of the posterior of group.mean[2,1].
+
+## Exercise 2
+2) *Swiss har data:* Fit an ANOVA model to mean hear density to decide whether the effects of greassland and arable land use is the same in all regions. Regions and land use are somewhat confounded, but we ignore this here. 
+
+```{r}
+hare <- read.table("hares.data.txt", header = TRUE,  sep = "\t")
+```
+
+a) Frequentist approach
+
+```{r}
+with(hare, aggregate(mean.density, by = list(region, landuse), FUN = mean, na.rm = TRUE))
+with(hare, table(region, landuse))
+
+hare$region <- as.factor(as.numeric(hare$region))
+hare$landuse <- as.factor(as.numeric(hare$landuse))
+
+summary(mod2 <- lm(mean.density ~ region*landuse - 1 - region - landuse, data = hare))
+```
+
+b) Bayesian approach
+
+```{r echo = T, results = "hide"}
+## lm(mean.density ~ region*landuse, data = hare))
+
+
+data <- with(hare, list(mean.density = mean.density, 
+             region = as.numeric(region), 
+             landuse = as.numeric(landuse), 
+             n = length(mean.density),
+             n.region = length(unique(region)),
+             n.landuse = length(unique(landuse))))
+
+inits <- function() list(sigma = rlnorm(1)) 
+
+# Parameters to estimate
+params <- c("sigma", "group.mean", "diff.density")
+
+# Set up Model
+jagsModel <- jags.model(file = "Exercise2.Ch10.txt",
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 2000) # Burn-in
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 6000) #Draws from posterior
+
+```
+
+
+```{r}
+summary(Samples)
+summary(mod2)
+```
+
+
+## Convergence
+```{r}
+# plot(Samples)
+# gelman.diag(Samples)
+gelman.plot(Samples)
+```
+
+
+We see that the estimates for the primary parameters, for which there is no information in the data, 
+the group.means for [2,5], [2,6] and [2,7] are totally influenced by their priors (see huge posterior 
+sd's and 95% credible intervals). As an aside, we also  see that the effective number of parameters,
+pD, is estimated correctly, because we estimate 13 mean parameters and a variance.
+
+In addition, the difference in mean density between the two landuse types in the eight regions seems to 
+differ quite a bit, as we can see from the estimates of the diff.density nodes. (Those for which there 
+is no information for both arable and grassland again have huge posterior sd's and 95% CRI's). 

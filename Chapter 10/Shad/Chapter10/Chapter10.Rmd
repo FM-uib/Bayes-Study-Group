@@ -1,0 +1,212 @@
+---
+title: "Chapter10"
+output: html_notebook
+---
+
+
+
+```{r setup, include=FALSE}
+library(rjags)
+library(coda)
+library(tidyverse)
+
+## to get markdown to work I needed to create the jags txt file in a regular R.script and source the script. Check Chapter10BayesianDefinitions.R 
+source('Chapter10BayesianDefinitions.R')
+
+```
+
+
+## Data 
+```{r}
+## sample size
+n.pop <- 5
+n.elv <- 3
+nsample <- 12
+n <- n.pop*nsample
+
+## factor levels
+pop <- gl(n = n.pop, k = nsample, length = n)
+elev <- gl(n = n.elv, k = nsample/n.elv, length = n) ## divieed nsample by n.elv to give 4 replications of three levels
+
+## Choose effects
+
+baseline <- 40 # intercept
+pop.effects <- c(-10, -5, 5, 10) # population effects
+elev.effects <- c(5, 10) # Elevation effects
+interaction.effects <- c(-2, 3, 0, 4, 4, 0, 3, -2) # Interaction effects
+all.effects <- c(baseline, pop.effects, elev.effects, interaction.effects)
+sigma <- 3
+eps <- rnorm(n, 0, sigma) # residuals
+X <- as.matrix(model.matrix(~pop*elev)) # design matrix
+X
+
+
+```
+
+```{r}
+wing <- as.numeric(as.matrix(X) %*% as.matrix(all.effects) + eps)
+
+boxplot(wing~elev*pop, col = "grey", 
+        xlab = "Elevation by Population", 
+        ylab = "Wing Length", 
+        main = "Sumulated data set",
+        las = 1,
+        ylim = c(20,70))
+abline(h = 40)
+```
+
+## 10.3
+Comparing the parameter estimates with what was use to define the data
+```{r}
+mod.glm <- glm(wing~pop*elev)
+summary(mod.glm)
+all.effects
+mod.glm$coefficients
+```
+Because the sample size is small, the data does not necessarily represent the all.effects defined in the data creation processess. To help assure that there is not a problem, we will then repeat the process and average across the random sampling variation.
+```{r include=FALSE}
+n.iter <- 1000
+estimates <- array(dim = c(n.iter, length(all.effects))) # data structure to hold the results
+for(i in 1:n.iter) {
+  print(i)
+  eps <- rnorm(n,0,sigma) #residuals
+  y <- as.numeric(as.matrix(X) %*% as.matrix(all.effects) + eps)
+  fit.model <- glm(y~pop*elev)
+  estimates[i,] <- fit.model$coefficients
+  
+  
+}
+
+print(apply(estimates, 2, mean), dig = 2)
+all.effects
+
+```
+## 10.4: Main Effects (Frequentist)
+
+```{r}
+m.eff <- glm(wing~elev + pop) 
+i.eff <- glm(wing~elev*pop - 1 - pop - elev) ## calculates the mean wing length for each group
+i.eff2 <- glm(wing~elev:pop) # have to do this by hand but is the same as i.eff. also this seems to be what is done in the interactive model for the bayesian framework.
+mod.eff <- glm(wing~elev*pop)
+
+
+```
+## 10.5.1: Main Effects (Bayesian)
+
+
+```{r}
+
+data <- list(wing = wing, 
+             elev = as.numeric(elev), 
+             pop = as.numeric(pop), 
+             n = length(wing))
+
+# Inits function
+inits <- function() list(alpha=rnorm(1), sigma = rlnorm(1)) 
+
+# Parameters to estimate
+params <- c("alpha","sigma", "beta.pop", "beta.elev")
+
+# Set up Model
+jagsModel <- jags.model(file = "anova.2w.Ch10.txt",
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 200) # Burn-in
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000) #Draws from posterior
+plot(Samples)
+
+
+```
+```{r}
+summary(Samples)
+
+mcmc <- as.data.frame(do.call(rbind, Samples))
+```
+
+## Convergence
+Gelman and Rubin (1992) propose a general approach to monitoring convergence of MCMC output in which m > 1 parallel chains are run with starting values that are overdispersed relative to the posterior distribution. Convergence is diagnosed when the chains have ‘forgotten’ their initial values, and the output from all chains is indistinguishable. The gelman.diag diagnostic is applied to a single variable from the chain. It is based a comparison of within-chain and between-chain variances, and is similar to a classical analysis of variance.
+
+Gelman, A., and D. B. Rubin. 1992. Inference from iterative simulation using multiple sequences. Statistical science 7:457-472.
+
+**When I ran this, it did not work and I am assuming it is due to setting the beta.pop[1] and beta.elev[1] to 0.**
+```{r}
+params <- c("alpha","sigma")
+
+# Set up Model
+jagsModel1 <- jags.model(file = "anova.2w.Ch10.txt",
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 20) # By increasing the burn-in we will see how the convergence improves
+
+Samples1 <- coda.samples(jagsModel1, 
+                        variable.names = params, 
+                        n.iter = 1000) #Draws from posterior
+plot(Samples1)
+
+gelman.diag(Samples1) ## look for values less than 1.05 with a CI 
+gelman.plot(Samples1)
+
+```
+
+## 10.5.2: interactive effects model
+
+ 
+```{r}
+data <- list(wing = wing, 
+             elev = as.numeric(elev), 
+             pop = as.numeric(pop), 
+             n = length(wing),
+             n.elv = n.elv,
+             n.pop = n.pop)
+
+# Inits function
+inits <- function() list(sigma = rlnorm(1)) 
+
+# Parameters to estimate
+params <- c("sigma", "group.mean")
+
+# Set up Model
+jagsModel <- jags.model(file = "anova.2w.Interactive.Ch10.txt",
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 200) # Burn-in
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000) #Draws from posterior
+summary(Samples)
+summary(i.eff)
+```
+## Convergence
+```{r}
+gelman.diag(Samples)
+gelman.plot(Samples)
+```
+## 10.5.3: Forming predictions
+Instead of plotting the *SD* and mean, I calculated the median and 95% Credibility Intervals based on the posterior distribution
+
+```{r}
+mcmc <- as.data.frame(do.call(rbind, Samples)) 
+sum.stats <- data.frame(mcmc %>%
+  summarise_all(funs(list(quantile(., probs = c(0.025, 0.5, 0.975))))) %>%
+  unnest %>%
+  transpose %>%
+  setNames(., c('2.5%', '50%', '97.5')) %>%
+  map_df(unlist) %>%
+  bind_cols(data.frame(vars=names(mcmc)), .) %>%
+    filter(vars != "sigma"))
+# sum.stats <- data.frame(summary(Samples)$statistics)[-16, ]
+or <- c(1,4,7,10,13,2,5,8,11,14,3,6,9,12,15)
+plot(or, sum.stats$X50., xlab = "Elev-by-Population", las = 1, ylab = "Predicted wing length", cex = 1.5, ylim = c(20,70))
+segments(or, sum.stats$X50., or, sum.stats$X97.5, col = "black", lwd = 1)
+segments(or, sum.stats$X50., or, sum.stats$X2.5., col = "black", lwd = 1)
+abline(h = 40)
+
+```
+

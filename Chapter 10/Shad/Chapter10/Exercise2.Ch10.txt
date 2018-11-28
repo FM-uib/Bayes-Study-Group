@@ -1,0 +1,27 @@
+
+    model {
+
+    # Priors
+    sigma ~ dunif(0, 100)
+    for(i in 1:n.region){
+      for(j in 1:n.landuse){
+        group.mean[i,j] ~ dnorm(0, 0.0001)
+      }
+    }
+
+    # Likelihood
+    for (i in 1:n) {
+    mean.density[i] ~ dnorm(mean[i], tau)
+    mean[i] <- group.mean[region[i], landuse[i]]
+    }
+
+    # Derived quantities
+    tau <- 1/ (sigma * sigma)
+
+     for(j in 1:8){
+     diff.density[j] <- group.mean[j,1] - group.mean[j,2]
+      }
+
+
+    }
+    

@@ -1,0 +1,22 @@
+
+    model {
+    
+    # Priors
+    sigma ~ dunif(0, 100)
+    for(i in 1:n.region){
+    for(j in 1:n.hab){
+    group.mean[i,j] ~ dnorm(0, 0.0001)
+    }
+    }
+    
+    # Likelihood
+    for (i in 1:n) {
+    mass[i] ~ dnorm(mean[i], tau)
+    mean[i] <- group.mean[region[i], hab[i]]
+    }
+    
+    # Derived quantities
+    tau <- 1/ (sigma * sigma)
+    
+    }
+    

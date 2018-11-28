@@ -1,0 +1,26 @@
+
+    model {
+    
+    # Priors
+    alpha ~ dnorm(0,0.001) ## intercept
+    sigma ~ dunif(0, 100)
+    beta.pop[1] <- 0 ## zero effect for intercept
+    for(k in 2:5) {
+    beta.pop[k] ~ dnorm(0, 0.001)
+    }
+    
+    beta.elev[1] <- 0
+    beta.elev[2] ~ dnorm(0, 0.001)
+    beta.elev[3] ~ dnorm(0, 0.001)
+    
+    # Likelihood
+    for (i in 1:n) {
+    wing[i] ~ dnorm(mean[i], tau) 
+    mean[i] <- alpha + beta.pop[pop[i]] + beta.elev[elev[i]]
+    }
+    
+    # Derived quantities
+    tau <- 1/ (sigma * sigma)
+    
+    }
+    
