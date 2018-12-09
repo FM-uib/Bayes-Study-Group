@@ -1,0 +1,149 @@
+---
+title: "Chapter 11 - Book Code"
+output: html_notebook
+---
+
+ 
+
+```{r, include=FALSE}
+library(here)
+library(rjags)
+set.seed(101)
+```
+
+## Data Generation
+
+```{r}
+n.groups <- 3
+n.sample <- 10	
+n <- n.groups * n.sample		# Total number of data points
+x <- rep(1:n.groups, rep(n.sample, n.groups)) # Indicator for population
+pop <- factor(x, labels = c("Pyrenees", "Massif Central", "Jura"))
+length <- runif(n, 45, 70)		# Obs. body length (cm) is rarely less than 45
+
+Xmat <- model.matrix(~ pop*length)
+print(Xmat, dig = 2) 
+beta.vec <- c(-250, 150, 200, 6, -3, -4)
+
+lin.pred <- Xmat[,] %*% beta.vec	# Value of lin.predictor
+eps <- rnorm(n = n, mean = 0, sd = 10)	# residuals 
+mass <- lin.pred + eps			# response = lin.pred + residual
+```
+
+```{r}
+hist(mass)				# Inspect what we’ve created
+```
+
+```{r}
+matplot(cbind(length[1:10], length[11:20], length[21:30]), cbind(mass[1:10], mass[11:20], 
+mass[21:30]), ylim = c(0, max(mass)), ylab = "Body mass (g)", xlab = "Body length (cm)", 
+col = c("Red","Green","Blue"), pch = c("P","M","J"), las = 1, cex = 1.2, cex.lab = 1.5)
+```
+
+## Frequentist Analysis
+
+```{r}
+summary(lm(mass ~ pop * length))
+
+beta.vec
+cat("And the residual SD was 10 \n")
+```
+
+## Bayesian Analysis using RJAGS
+
+Define the model
+
+```{r}
+model <- "
+model {
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta[pop[i]]* length[i]
+ }
+
+# Priors
+ for (i in 1:n.group){		
+    alpha[i] ~ dunif(-1000, 1000)		# Intercepts
+    beta[i] ~ dunif(-1000, 1000)		# Slopes
+ }
+ sigma ~ dunif(0, 100)			# Residual standard deviation
+ tau <- 1 / ( sigma * sigma)
+
+# Derived quantities
+# Define effects relative to baseline level
+ a.effe2 <- alpha[2] - alpha[1]		# Intercept Massif Central vs. Pyr.
+ a.effe3 <- alpha[3] - alpha[1]		# Intercept Jura vs. Pyr.
+ b.effe2 <- beta[2] - beta[1]		# Slope Massif Central vs. Pyr.
+ b.effe3 <- beta[3] - beta[1]		# Slope Jura vs. Pyr.
+
+# Custom tests
+ test1 <- beta[3] - beta[2]		# Slope Jura vs. Massif Central
+}
+"
+```
+
+Bundle Data and run MCMC sampler
+
+```{r, include=FALSE}
+data <- list("length" = length,
+             "mass" = as.numeric(mass),
+             "pop" = pop,
+             "n" = n,
+             "n.group" = n.groups)
+
+inits <- function(){ list(alpha = runif(3, -1000, 1000), 
+                          beta = runif(3, -1000, 1000),
+                          sigma = runif(1, 0, 100) )}
+
+params <- c("alpha", "beta", "a.effe2", "a.effe3", "b.effe2", "b.effe3", "test1")
+
+jagsModel <- jags.model(file = textConnection(model),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+```{r}
+summary(Samples)
+beta.vec
+```
+
+```{r, include=FALSE}
+data <- list("length" = as.numeric(scale(length)),
+             "mass" = as.numeric(mass),
+             "pop" = pop,
+             "n" = n,
+             "n.group" = n.groups)
+
+inits <- function(){ list(alpha = runif(3, -1000, 1000), 
+                          beta = runif(3, -1000, 1000),
+                          sigma = runif(1, 0, 100) )}
+
+params <- c("alpha", "beta", "a.effe2", "a.effe3", "b.effe2", "b.effe3", "test1")
+
+jagsModel <- jags.model(file = textConnection(model),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 500)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+```{r}
+print(lm(mass ~ pop * as.numeric(scale(length)) - 1 - as.numeric(scale(length)))$coefficients , dig = 4)
+summary(Samples)
+```
+```{r}
+plot(Samples)
+#d$s.x * attr(d$s.x, 'scaled:scale') + attr(d$s.x, 'scaled:center') unscale data
+```
+

@@ -130,8 +130,8 @@ inits <- function(){ list(alpha = runif(1, 0, 100), sigma = runif(1, 0, 100) )}
 
 params <- c("alpha", "beta.pop", "beta.elev", "sigma")
 
-jagsModel <- jags.model(file= textConnection(model),
-                        data=data,
+jagsModel <- jags.model(file = textConnection(model),
+                        data =data,
                         init = inits,
                         n.chains = 3, 
                         n.adapt = 100)

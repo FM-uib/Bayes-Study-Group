@@ -1,0 +1,17 @@
+
+    model {
+
+    # Likelihood
+    for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta[pop[i]]* length[i]
+    }
+
+    # Priors
+    for (i in 1:n.group){		
+    alpha[i] ~ dunif(-1000, 1000)		# Intercepts
+    beta[i] ~ dunif(-1000, 1000)		# Slopes
+    }
+    sigma ~ dunif(0, 100)			# Residual standard deviation
+    tau <- 1 / ( sigma * sigma)
+    }

@@ -1,0 +1,65 @@
+---
+title: "Chapter 11 - Exercises"
+output: html_notebook
+---
+
+```{r, include=FALSE}
+library(here)
+library(rjags)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+theme_set(theme_classic())
+```
+
+## Exercise 1
+
+1. Probability of a parameter: What is the probability that the slope of the mass – length relationship of asp vipers is inferior in the Jura than in the Massif Central? Produce a graphical and a numerical answer.
+
+First load the data
+
+```{r}
+load(here("data", "vipers.rda"))
+length.scaled <- scale(length)
+```
+
+Bundle data and run MCMC
+
+```{r, include=FALSE}
+data <- list("length" = as.numeric(length.scaled),
+             "mass" = as.numeric(mass),
+             "pop" = pop,
+             "n" = n,
+             "n.group" = n.groups)
+
+inits <- function(){ list(alpha = runif(3, -1000, 1000), 
+                          beta = runif(3, -1000, 1000),
+                          sigma = runif(1, 0, 100) )}
+
+params <- c("alpha", "beta", "sigma")
+
+jagsModel <- jags.model(file = here("models", "ancova.txt"),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 100)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+
+
+2. Related models: Adapt the code to fit two variations of the model:
+• Fit different intercepts but a common slope
+• Fit the same intercept and the same slope
+
+3. Quadratic effects: Add a quadratic term to the mass – length relationship,
+i.e., fit the model pop + (length + length^2). You do not need to
+reassemble a dataset that contains an effect of length squared, but you can
+simply take the dataset we have already created in this chapter.
+
+4. Swiss haredata: Fit an ANCOVA (pop * year, with year as a continuous
+explanatory variable) to the meandensity. Also compute residuals and plot
+them to check for outliers.
