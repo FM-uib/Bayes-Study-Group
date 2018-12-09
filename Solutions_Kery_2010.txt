@@ -1,0 +1,4918 @@
+
+###############################################################
+#                                                             #
+#    Solutions to the exercises in the book                   #
+#    Kery, M. 2010. Introduction to WinBUGS for ecologists.   # 
+#    Academic Press, Burlington.			      #
+#                                                             #
+###############################################################
+
+
+
+# This document contains the solutions to the exercises in the book. This is mostly R and WinBUGS code, 
+# therefore I chose to format this document as a simple text file, so you can open it in R directly or 
+# in TinnR or similar text editors from which many people run R. 
+
+# The document also contains some additional exercises, along with their solutions, which are not 
+# contained in the first edition of the book.
+
+# Some exercises deal with the Swiss hare data set, which you must first download from the book website 
+# at www.mbr-pwrc.usgs.gov/pubanalysis/kerybook.
+# This is a tab-delimited text file, which you can read into your R workspace using code similar to this:
+
+hares <- read.table("F:/a_solutions WB book/hares.txt", header = TRUE)
+
+# To execute the code, you can copy-paste parts of it into an open R window. Alternatively, you can open 
+# the text file in Tinn-R (though beware of possible problems with sink(); check the book appendix for a 
+# workaround) or any other R editor.
+
+# All code was written and tried out with R 2.10.1. and WinBUGS 1.4.3.
+
+# Note that you will have to set appropriately the following things, which are not documented in this code:
+#    1. set an appropriate R working directory
+#    2. change the bugs.directory setting in the bugs() function
+#       when using a non-English computer (e.g., to "C:/Programme/WinBUGS14/" on German locales)
+#    3. load the package R2WinBUGS and possibly other packages also
+
+
+# Created in September 2010 by Marc Kery 
+# Last changes: 20 November 2012
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 2: Introduction to Bayesian inference        #
+#                                                             #
+###############################################################
+
+
+
+
+1. A classical application of Bayes rule
+   -------------------------------------
+   
+Exercise:
+Use Bayes' rule to compute the probability that you actually have the disease for which you have just 
+been tested positively. What you know is this: 5% of the population to which you belong have the 
+disease and the test has a sensitivity of 99% and a specificity of 95%. Denote D = 'have the disease' 
+and N = 'not have the disease' and + = 'get a positive test result' and - = 'get a negative test result'.
+| means 'given'. Also note that the test sensitivity is p(+|D) and specificity is p(-|N).
+
+Solution:
+Start with p(D|+) = p(+|D) * p(D) / p(+)
+
+You can get a positive test result when you have the disease or when you don't have it. Hence, the 
+denominator can be expressed as follows:
+
+p(+) = p(+|D) * p(D) + (1-p(-|N)) * p(N)
+
+which is this:
+
+0.99 * 0.05 + (1-0.95) * (1-0.05)
+
+Altogether, we get this for the probability to have the disease, given a positive test result:
+
+p(D|+) = (0.99 * 0.05) / (0.99 * 0.05 + (1-0.95) * (1-0.05)) = 0.51
+
+So there is only about a 51% chance of actually having the disease when you were just given a positive 
+test result. Most people find this very surprising, given the very small error rates of the testing 
+procedure (1 minus sensitivity and specificity, respectively). Note that this analysis assumes that 
+what is effectively the prior of your analysis, p(D) = 0.05, is appropriate also for you. If there is a 
+history in your family of having the disease in question, then the proportion of the general population
+having the disease will NOT be a suitable prior for you in this analysis.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             # 
+#        Chapter 4: First session in WinBUGS                  #
+#                                                             #
+###############################################################
+
+
+
+
+1. Experiment with a few trivial errors in WinBUGS
+   -----------------------------------------------
+    
+A colleague commented to me that she did not find this exercise very enlightening, since there are so 
+many ways to make an error in coding an analysis in WinBUGS. The latter may well be true, but it is 
+still very important that you get a feel for what may have gone wrong when WinBUGS crashes or reports 
+an error. So here you can experiment with a few such causes for errors and see what WinBUGS tells you 
+about the kind of error you made.
+
+The part of the exercise with missing values is important for practical analyses, since those will
+always include missing values, and you have to know how to deal with them. Therefore, this is probably 
+the most important exercise in this section to solve.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 5: Running WinBUGS from R                    #
+#                                                             #
+###############################################################
+
+
+
+
+1. Informative priors
+   ------------------
+    
+Retain a sample of the two data generation mechanism, i.e., one pair of data sets (with 10 or 1000 
+birds measured). Then define a model with prior information included. You also have to chose the 
+initial values carefully, because WinBUGS will crash when supplied with initials outside of the range 
+over which a prior of a parameter is defined.
+
+
+# Save model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ population.mean ~ dunif(500, 590)	# Average believed to lie between 500 and 590 g
+ precision <- 1 / population.variance
+ population.variance <- population.sd * population.sd
+ population.sd ~ dunif(0,100)
+
+# Likelihood
+ for(i in 1:nobs){
+    mass[i] ~ dnorm(population.mean, precision)
+ }
+}
+",fill=TRUE)
+sink()
+
+
+# Bundle data
+win.data <- list(mass = y1000, nobs = length(y1000))
+
+# Function to generate starting values: have to adapt that, too
+inits <- function()
+  list (population.mean = rnorm(1,550), population.sd = runif(1, 1, 30))
+
+
+# Parameters to be monitored (= to estimate)
+params <- c("population.mean", "population.sd", "population.variance")
+
+# MCMC settings
+nc <- 3		# Number of chains
+ni <- 1000	# Number of draws from posterior (for each chain)
+nb <- 1		# Number of draws to discard as burn-in
+nt <- 1		# Thinning rate
+
+
+# Start Gibbs sampler: Run model in WinBUGS and save results in object called out
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "model.txt", 
+n.thin = nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug=TRUE, DIC=TRUE, working.directory=getwd())
+
+print(out, dig = 3)
+
+# Here's the solution
+> print(out, dig = 3)
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 1000 iterations (first 1 discarded)
+ n.sims = 2997 iterations saved
+                        mean     sd     2.5%     25%     50%     75%    97.5%  Rhat n.eff
+population.mean      589.912  0.101  589.600  589.90  589.90  590.00  590.000 1.003  1500
+population.sd         31.158  0.714   29.789   30.67   31.14   31.65   32.541 1.001  3000
+population.variance  971.318 44.531  887.360  940.90  969.70 1002.00 1059.100 1.001  3000
+deviance            9714.048  2.675 9711.000 9712.00 9713.00 9715.00 9721.000 1.021   550
+
+So you see that the population mean is heavily affected by your choice of prior. This is not a bad 
+thing, but rather, part of the essence of Bayesian inference: that your conclusion about a parameter
+(embodied by the posterior distribution) is the result of both the information in the data AND of what
+you knew or assumed about the magnitude of that parameter before getting your data.
+
+
+
+
+2. Comparison of the inference about the parameters from the large and the small data sets
+   ---------------------------------------------------------------------------------------
+    
+You have to first rewrite the model file to contain the non-informative priors. Then, you can simply 
+change the 'data statements' before running the analysis.
+
+win.data <- list(mass = y1000, nobs = length(y1000))		# To analyse the large data set
+win.data <- list(mass = y10, nobs = length(y10))		# To analyse the small data set
+
+
+Here's the summary of the analysis of one particular large data set:
+
+> print( out, dig = 3)# Produces a summary of the object
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 1000 iterations (first 1 discarded)
+ n.sims = 2997 iterations saved
+                        mean     sd    2.5%    25%     50%     75%    97.5%  Rhat n.eff
+population.mean      600.140  0.937  598.30  599.5  600.10  600.80  601.900 1.001  3000
+population.sd         29.457  0.671   28.17   29.0   29.45   29.88   30.801 1.001  3000
+population.variance  868.148 39.647  793.66  840.9  867.10  892.90  948.490 1.001  3000
+deviance            9601.074  2.225 9599.00 9600.0 9600.00 9602.00 9607.000 1.012  2600
+[...]
+
+And here's the summary of the analysis of one particular small data set:
+
+> print( out, dig = 3)# Produces a summary of the object
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 1000 iterations (first 1 discarded)
+ n.sims = 2997 iterations saved
+                       mean      sd    2.5%    25%    50%    75%    97.5%  Rhat n.eff
+population.mean     587.722   8.996 569.980 582.10 587.70 593.30  605.310 1.002  1200
+population.sd        26.788   8.416  16.269  21.21  25.12  30.13   48.412 1.004  1300
+population.variance 788.383 611.895 264.750 449.70 630.80 907.60 2344.200 1.004  1300
+deviance             92.241   2.729  89.640  90.33  91.43  93.20   99.840 1.009  1100
+[...]
+
+The large data set contains much more information about the population parameters, which are the aim 
+of the estimation: the mean and the standard deviation of the body mass of the population of male 
+peregrines. Therefore, the posterior means from analysing the large data set are much closer to the 
+known, true values. In addition, the estimates are much more precise, i.e., the posterior sd for both 
+parameters is much smaller in the large than in the small data set.
+
+
+
+
+3. Some effects of the length of the Markov chains 
+   -----------------------------------------------
+    
+For this analysis you can either take the native WinBUGS file of the analysis (i.e., the file with the
+odc ending), or run WinBUGS from R and ask for only 1 or so iterations to be run. With bugs(..., debug 
+= TRUE) WinBUGS then will stay open and you can run the chains for an additional 10, 100 etc. iterations 
+and inspect the estimates after the required number of iterations.
+
+# Bundle data
+win.data <- list(mass = y1000, nobs = length(y1000))
+
+# Function to generate starting values: have to adapt that, too
+inits <- function()
+  list (population.mean = rnorm(1, 600, 30), population.sd = runif(1, 0, 30))
+
+
+# Parameters to be monitored (= to estimate)
+params <- c("population.mean", "population.sd", "population.variance")
+
+# MCMC settings
+nc <- 3		
+ni <- 3 	
+nb <- 1		
+nt <- 1		
+
+
+# Start Gibbs sampler: Run model in WinBUGS and save results in object called out
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "model.txt", 
+n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug=TRUE, DIC=TRUE, working.directory=getwd())
+
+Summaries of the node statistics:
+
+After approx. 10 iterations:
+Node statistics
+	 node	 mean	 sd	 MC error	2.5%	median	97.5%	start	sample
+	deviance	9608.0	21.93	6.663	9599.0	9601.0	9720.0	2	30
+	population.mean	600.1	1.188	0.2873	597.3	600.3	602.2	2	30
+	population.sd	30.09	1.995	0.6734	27.82	29.54	38.43	2	30
+	population.variance	909.2	130.5	43.74	774.2	872.3	1477.0	2	30
+
+
+After approx. 100 iterations:
+Node statistics
+	 node	 mean	 sd	 MC error	2.5%	median	97.5%	start	sample
+	deviance	9602.0	7.548	0.6984	9599.0	9600.0	9609.0	2	297
+	population.mean	600.2	0.9721	0.07288	598.1	600.2	602.0	2	297
+	population.sd	29.47	0.8875	0.0687	28.13	29.39	31.13	2	297
+	population.variance	869.4	55.53	4.339	791.1	863.5	968.8	2	297
+
+
+After approx. 1,000 iterations:
+	 node	 mean	 sd	 MC error	2.5%	median	97.5%	start	sample
+	deviance	9601.0	3.032	0.0779	9599.0	9600.0	9607.0	2	2997
+	population.mean	600.1	0.9501	0.01912	598.2	600.1	602.0	2	2997
+	population.sd	29.46	0.6804	0.01407	28.24	29.41	30.8	2	2997
+	population.variance	868.2	40.58	0.8468	797.5	865.1	948.7	2	2997
+
+
+After approx. 10,000 iterations:
+Node statistics
+	 node	 mean	 sd	 MC error	2.5%	median	97.5%	start	sample
+	deviance	9601.0	2.13	0.01487	9599.0	9600.0	9606.0	2	29997
+	population.mean	600.1	0.9381	0.005661	598.3	600.1	602.0	2	29997
+	population.sd	29.44	0.6642	0.003665	28.18	29.43	30.77	2	29997
+	population.variance	867.1	39.21	0.2173	794.1	865.9	946.9	2	29997
+
+
+You see that with increasing number of MCMC samples from the posterior distributions of the parameters,
+you decrease the Monte Carlo error, but that the estimates of the posterior distribution are hardly 
+changed. In particular, the posterior standard deviation (sd) does not go down with increasing MCMC 
+sample size. The posterior sd is a measure of the precision of the estimate of a parameter, i.e., of 
+how concentrated ('narrow') the posterior distribution is. This is only a function of the data and 
+of the priors (and, the model), but not of the length of the Markov chains with which you explore that 
+posterior distribution.
+
+To look at the values of the Brooks-Gelman-Rubin statistics, you can repeatedly run the analysis with 
+different chain lengths and then look at the summary of the analysis produced by the bugs() function. 
+You will see that with increasing chain length, the value of this convergence criterion will come down 
+and become essentially equal to 1 with the largest chain length.
+
+
+
+
+4. Posterior standard deviation and Monte Carlo (MC) error 
+   -------------------------------------------------------
+    
+Look at the summaries of the node statistics above. You will see that the posterior sd does not 
+systematically change as you increase chain length, but that the MC error becomes smaller and smaller. 
+According to a rule of thumb, the MC error should be smaller that about 1-5% of the posterior sd for
+acceptable chain length.
+
+
+
+
+5. Derived quantities (compute CV); and also compute the residuals
+   ---------------------------------------------------------------
+
+Exercise:
+We compute the CV and, in addition to what is asked for in the book, also add a line in the BUGS code to
+compute the residuals. Note that in the book I ask for a "point estimate (with SE)". This is not 
+strictly correct, but what I mean is that you should report the posterior mean as a point estimate and 
+the posterior standard deviation as a measure of the precision of that estimate. The latter is analogous
+to a standard error (SE) in ML inference.
+
+Solution:
+To compute the CV (in %) and the residuals, we simply add two lines that define these two estimands 
+(called 'node' by WinBUGS). When you change the name of the BUGS model file (as I do below), remember to
+make the appropriate change also when you call the bugs function.
+
+
+# Save BUGS description of the model to working directory
+sink("model_cv_resi.txt")
+cat("
+model {
+
+# Priors
+ population.mean ~ dunif(0,5000)
+ precision <- 1 / population.variance
+ population.variance <- population.sd * population.sd
+ population.sd ~ dunif(0,100)
+ cv <- 100*(population.sd / population.mean) 	# Line to compute the CV in %
+
+# Likelihood
+ for(i in 1:nobs){
+    mass[i] ~ dnorm(population.mean, precision)
+    resi[i] <- mass[i] - population.mean  	# Line to compute the residuals
+ }
+}
+",fill=TRUE)
+sink()
+
+# Package all the stuff to be handed over to WinBUGS
+# Bundle data
+win.data <- list(mass = y10, nobs = length(y10)) 
+
+
+# Function to generate starting values
+inits <- function()
+  list (population.mean = rnorm(1,600), population.sd = runif(1, 1, 30))
+
+# Parameters to be monitored (= to estimate)
+params <- c("population.mean", "population.sd", "population.variance", "precision", "cv", "resi")
+
+# MCMC settings
+nc <- 3
+ni <- 1200
+nb <- 200
+nt <- 2
+
+# Start Gibbs sampler: Run model in WinBUGS and save results in object called out
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "model_cv_resi.txt",
+n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug=TRUE, DIC=TRUE, working.directory=getwd())
+
+# Look at the results
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "model_cv_resi.txt", fit using WinBUGS,
+ 3 chains, each with 1200 iterations (first 200 discarded), n.thin = 2
+ n.sims = 1500 iterations saved
+                        mean      sd    2.5%     25%      50%      75%    97.5%  Rhat n.eff
+population.mean      615.411  12.934 589.795 607.200  615.600  623.700  642.005 1.000  1500
+population.sd         37.841  10.796  23.044  30.165   35.890   43.105   64.310 1.002   830
+population.variance 1548.392 991.761 531.112 910.050 1288.000 1857.750 4136.287 1.002   830
+precision              0.001   0.000   0.000   0.001    0.001    0.001    0.002 1.002   830
+cv                     6.153   1.770   3.738   4.890    5.829    7.014   10.557 1.002   820
+resi[1]                3.738  12.933 -22.831  -4.577    3.512   11.970   29.357 1.000  1500
+resi[2]               25.865  12.933  -0.706  17.550   25.640   34.093   51.482 1.000  1500
+resi[3]               13.933  12.933 -12.641   5.618   13.705   22.163   39.552 1.000  1500
+resi[4]               25.859  12.933  -0.712  17.547   25.635   34.090   51.477 1.000  1500
+resi[5]               15.590  12.933 -10.981   7.275   15.365   23.820   41.212 1.000  1500
+resi[6]              -40.275  12.933 -66.846 -48.590  -40.500  -32.047  -14.658 1.000  1500
+resi[7]               21.267  12.933  -5.304  12.950   21.040   29.492   46.887 1.000  1500
+resi[8]              -68.865  12.933 -95.435 -77.180  -69.090  -60.638  -43.248 1.000  1500
+resi[9]              -13.444  12.933 -40.011 -21.760  -13.670   -5.215   12.172 1.000  1500
+resi[10]              21.156  12.933  -5.415  12.840   20.930   29.383   46.772 1.000  1500
+deviance              99.291   2.485  96.730  97.460   98.535  100.400  106.152 1.002  1400
+[...]
+
+# So you might report the results of this analysis as follows: 
+"The CV (in %, posterior mean and sd) of body mass was estimated at 6.15 (1.77)."
+
+
+# To draw a picture of the posterior distribution of the CV of body mass, you could produce a histogram:
+hist(out$sims.list$cv, xlab = 'Coefficient of variation (%) of body mass', ylab = 'Frequency',
+breaks = 40, las = 1, col = 'grey')
+
+# You could also draw a smoothed version of this using the function density():
+plot(density(out$sims.list$cv), xlab = 'Coefficient of variation (%) of body mass', 
+ylab = 'Frequency', las = 1, col = 'grey', lwd = 2, main = '')
+
+# To look at residuals you could do this:
+plot(out$mean$resi, xlab = 'Observation number', ylab = '', las = 1, lwd = 2, main = '')
+abline(h = 0, lwd = 1)
+
+# Remember that in Bayesian inference, every unknown has a (posterior) distribution. So to summarize 
+(graphically) the distribution of each residual, you can do this:
+
+index <- matrix(rep(1:10, 1500), ncol = 10, byrow = TRUE)	#...
+boxplot(out$sims.list$resi ~ index, col = 'gray', xlab = 'Observation number')
+abline(h = 0, lwd = 1)
+
+ 
+ 
+ 
+6. Swiss hare data: Mean density
+   -----------------------------
+
+Exercise:
+Summarize what the data tell you about the mean hare density. You can use the same BUGS model description as 
+before in this chapter and just fit the 'model of the mean' to the variable named 'mean.density'. To get an 
+impression of what might be useful ranges for the uniform distributions used to convey our ignorance about 
+the mean density, we first summarize the contents of that variable.
+summary(hares$mean.density)
+
+Solution:
+First, don't forget to read in the data, for instance, like this:
+hares <- read.table("F:/a_solutions WB book/hares.txt", header = TRUE)
+
+# Save BUGS description of the model to working directory
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ population.mean ~ dunif(0,100)
+ precision <- 1 / population.variance
+ population.variance <- population.sd * population.sd
+ population.sd ~ dunif(0,100)
+
+# Likelihood
+ for(i in 1:nobs){
+    y[i] ~ dnorm(population.mean, precision)
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(y = hares$mean.density, nobs = length(hares$mean.density)) 
+
+
+# Function to generate starting values
+inits <- function()
+  list (population.mean = runif(1, 0,100), population.sd = runif(1, 1, 30))
+
+# Parameters to be monitored (= to estimate)
+params <- c("population.mean")
+
+# MCMC settings
+nc <- 3		# Number of chains
+ni <- 6000	# Number of draws from posterior (for each chain)
+nb <- 2000	# Number of draws to discard as burn-in
+nt <- 4		# Thinning rate
+
+# Start Gibbs sampler: Run model in WinBUGS and save results in object called out
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "model.txt", 
+n.thin = nt, n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE, DIC = TRUE, working.directory = getwd())
+
+# Look at the results
+print(out, dig = 3)
+
+> print(out, dig = 3)
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 1200 iterations (first 200 discarded), n.thin = 2
+ n.sims = 1500 iterations saved
+                    mean    sd     2.5%      25%      50%      75%    97.5%  Rhat n.eff
+population.mean    4.744 0.145    4.459    4.646    4.748    4.845    5.015 1.001  1500
+deviance        3735.790 2.063 3734.000 3734.000 3735.000 3736.000 3741.000 1.002  1500
+
+
+So, we might report the results of this analysis in the Results section of our paper as follows:
+"Mean density of European Brown hares in Switzerland (posterior mean and sd) was estimated at
+4.74 (0.15), with a 95% Bayesian credible interval of (4.46, 5.02). "
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 6: Basics of linear models                   #
+#                                                             #
+###############################################################
+
+
+
+
+1. Fitting a custom-built design matrix
+   ------------------------------------
+ 
+Exercise:
+Using R (lm() function), we want to fit a 'semi-interactive' ANCOVA model, using a custom-built design 
+matrix, where the slope of mass on length is identical in population 1 and 3. For your convenience, here 
+are part of the data again:
+
+mass <- c(6, 8, 5, 7, 9, 11)
+pop <- factor(c(1,1,2,2,3,3))
+svl <- c(40, 45, 39, 50, 52, 57)
+
+fm <- lm(mass ~ pop*svl)			# Fully interactive model which uses up all d.f.
+summary(fm)
+
+Solution:
+Here is a quick solution to build the custom design matrix:
+DM <- model.matrix(~ svl * pop - 1 - svl)	# Build a design matrix to start with
+DM[5:6,4] <- DM[5:6,6]				# Write the last two elements in col. 6 into col 4
+DM <- DM[,-6]					# Delete column 6
+
+# Fit that custom design matrix (have to subtract intercept to override R's treatment parameterisation):
+fm <- lm(mass ~ DM-1)
+summary(fm)
+
+This shows again that if you understand design matrices, you have full freedom to fit any 
+kind of linear model you want, in R, WinBUGS or other useful stats packages.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 7: t-tests                                   #
+#                                                             #
+###############################################################
+
+
+
+
+1. t-test with heterogeneous variances
+   ------------------------------------
+
+Exercise:
+Adapt the code to directly test for equal variances of wingspan.
+
+Solution:
+We simply add a line that computes the difference between male and female wingspan and then monitor that
+node, called delta.sigma2 below. The following assumes that you have the data from chapter 7.2.2. 
+in your R workspace.
+
+sink("h.ttest.2.txt")
+cat("
+model {
+   # Priors
+   mu1 ~ dnorm(0,0.001)
+   mu2 ~ dnorm(0,0.001)
+   sigma1 ~ dunif(0, 1000)
+   sigma2 ~ dunif(0, 1000)
+
+   # Likelihood
+   for (i in 1:n1) {
+        y1[i] ~ dnorm(mu1, tau1) 
+   }
+
+   for (i in 1:n2) {
+        y2[i] ~ dnorm(mu2, tau2) 
+   }
+
+   # Derived quantities
+   delta.mu <- mu2 - mu1
+   sigma2.1 <- sigma1 * sigma1
+   sigma2.2 <- sigma2 * sigma2
+   tau1 <- 1 / (sigma1 * sigma1)
+   tau2 <- 1 / (sigma2 * sigma2)
+   delta.sigma2 <- sigma2.2 - sigma2.1
+}
+",fill=TRUE)
+sink()
+
+data <- list("y1", "y2", "n1", "n2")
+
+inits <- function(){ list(mu1=rnorm(1), mu2=rnorm(1), sigma1 = rlnorm(1), sigma2 = rlnorm(1))}
+
+parameters <- c("mu1","mu2", "delta.mu", "delta.sigma2", "sigma1", "sigma2", "sigma2.1", "sigma2.2")
+
+# MCMC settings
+nc <- 3
+ni <- 2000
+nb <- 500
+nt <- 1
+
+out <- bugs (data, inits, parameters, "h.ttest.2.txt", n.thin=nt,n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE)
+
+print(out, dig = 3)
+
+# Look at posterior for some of the variance parameters
+par(mfrow = c(3,1))
+hist(out$sims.list$sigma2.1)
+hist(out$sims.list$sigma2.2)
+hist(out$sims.list$delta.sigma2)
+
+
+Since the posterior distribution of the difference between the variance of male and female wingspan overlaps
+zero (which means that there is no difference), we don't have much evidence for a sex-related variability
+in the wingspan of peregrine falcons
+
+
+
+
+2. Effects of assumption violations on the t-test with homogeneous variances
+   -------------------------------------------------------------------------
+
+Exercise:
+Simulate data that differ between two groups in the variance, but not in the mean, and see whether this 
+screws a t-test that assumes constant variance.
+
+Solution:
+We will conduct a little simulation exercise wherein we repeatedly generate and then analyse data sets.
+For this, it is convenient to define functions for data generation and analysis.
+
+We first define a function to simulate the data. To make everything as comparable as possible, we 
+assume an even sample size.
+
+data.fn <- function(n1 = 50, n2 = 50, mu = 100, sigma1 = 5, sigma2 = 3){
+   n1 <- n1					# Number of females
+   n2 <- n2					# Number of males
+   mu <- mu					# Population mean for both sexes
+   sigma1 <- sigma1				# Population SD for females
+   sigma2 <- sigma2				# Population SD for males
+   n <- n1+n2					# Total sample size
+   y1 <- rnorm(n1, mu, sigma1)			# Data for females
+   y2 <- rnorm(n2, mu, sigma2)			# Data for males
+   y <- c(y1, y2)					# Aggregate both data sets
+   x <- rep(c(0,1), c(n1, n2))			# Indicator for male
+   boxplot(y ~ x, col = "grey", xlab = "Male", ylab = "Wingspan (cm)", las = 1)
+   return(list(x=x, y=y))
+}
+
+To define this function, you execute everything between the line starting with data.fn and the closing 
+curly bracket. To execute it, you then type 'data.fn().'
+
+Second, we define another function to use WinBUGS to fit the linear model underlying a t-test. Depending
+on what magnitude of sigma you choose in the data generation, you will have to adapt the upper limit of
+the uniform prior for that parameter:
+
+fit.fn <- function(x = x, y = y) {
+# Define BUGS model
+sink("ttest.txt")
+cat("
+model {
+
+# Priors
+ mu1 ~ dnorm(0,0.001)
+ delta ~ dnorm(0,0.001)
+ tau <- 1/ (sigma * sigma)
+ sigma ~ dunif(0, 50)
+
+# Likelihood
+ for (i in 1:n) {
+    y[i] ~ dnorm(mu[i], tau) 
+    mu[i] <- mu1 + delta *x[i]
+ }
+
+# Derived quantities: one of the greatest things about a Bayesian analysis
+ mu2 <- mu1 + delta		# Difference in wingspan
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(x=x, y=y, n = length(x))
+
+# Inits function
+inits <- function(){list(mu1=rnorm(1), delta=rnorm(1), sigma = runif(1))}
+
+# Parameters to estimate
+params <- c("mu1","mu2", "delta", "sigma")
+
+# MCMC settings
+nc <- 3
+ni <- 600		
+nb <- 100	
+nt <- 1
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters = params, model = "ttest.txt", 
+n.thin = nt, n.chains = nc, n.burnin = nb, n.iter = ni, debug = FALSE, working.directory = getwd())
+
+out
+}
+
+
+And third, we set up structures to contain the estimates from n.iter executions of these two functions and
+then run the simulation for n.iter replicates. We will save the summary table from each analysis in a 3D
+array.
+
+n.iter <- 50		# The number of simreps
+esti.table <- array(NA, dim = c(5,9,n.iter))
+
+Assuming we have run this model once already and have the results in an object called out, we can do the
+following to name the two first dimensions of the array.
+
+rownames(esti.table) <-  rownames(out$summary)
+colnames(esti.table) <-  colnames(out$summary)
+
+start.time <- Sys.time()
+for(i in 1:n.iter){
+   print(i)
+   data <- data.fn(n1 = 50, n2 = 50, mu = 100, sigma1 = 20, sigma2 = 10)
+   fm <- fit.fn(data$x, data$y)
+   esti.table[,,i] <- fm$summary
+}
+end.time = Sys.time()
+cat('\nProcessing time: ',round(difftime(end.time,start.time,units='mins'),dig=2),' minutes\n',sep='')
+
+We look at the n.iter simulations
+esti.table
+
+Then we summarize results of simulation:
+apply(esti.table, c(1,2), mean)
+
+>From this there does not appear to be a great sensitivity to heterogeneous variances. Not sure whether this is generally true, though.
+
+
+
+
+3. Homogenous and heterogeneous-variance test for landuse effects on hare density (Swiss hare data)
+   ------------------------------------------------------------------------------------------------
+
+Exercise:
+Fit the two t-test models to mean.density in the Swiss hare data set. 
+
+Solution:
+To avoid committing pseudo-replication or having to use a mixed model (with a site random effect) we
+first average mean.density over years within a site.
+
+MMD <- aggregate(hares$mean.density, by = list(hares$site), FUN = mean, na.rm = TRUE)$x
+LANDUSE <- aggregate(as.numeric(hares$landuse), by = list(hares$site), FUN = mean, na.rm = TRUE)$x -1
+# LANDUSE = 1 is grass and LANDUSE = 0 is arable
+
+We fit the t-test model with homogenous variance
+
+# Define BUGS model
+sink("ttest.txt")
+cat("
+model {
+
+# Priors
+ mu1 ~ dnorm(0,0.001)
+ delta ~ dnorm(0,0.001)
+ tau <- 1/ (sigma * sigma)
+ sigma ~ dunif(0, 10)
+
+# Likelihood
+ for (i in 1:n) {
+    y[i] ~ dnorm(mu[i], tau) 
+    mu[i] <- mu1 + delta *x[i]
+ }
+
+# Derived quantities
+ mu2 <- mu1 + delta	# Mean density in grassland areas
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(x = LANDUSE, y = MMD, n = length(MMD))
+
+# Inits function
+inits <- function(){list(mu1=rnorm(1), delta=rnorm(1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+params <- c("mu1","mu2", "delta", "sigma")
+
+# MCMC settings
+nc <- 3
+ni <- 1200
+nb <- 200
+nt <- 2
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters = params, model = "ttest.txt", n.thin = nt, 
+n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE, working.directory = getwd())
+
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "ttest.txt", fit using WinBUGS,
+ 3 chains, each with 1200 iterations (first 200 discarded), n.thin = 2
+ n.sims = 1500 iterations saved
+            mean    sd    2.5%     25%     50%     75%   97.5%  Rhat n.eff
+mu1        4.933 0.493   3.928   4.630   4.933   5.258   5.852 1.003  1500
+mu2        2.954 0.786   1.480   2.399   2.949   3.489   4.512 1.003   830
+delta     -1.980 0.937  -3.742  -2.627  -2.040  -1.334  -0.115 1.002  1000
+sigma      3.165 0.305   2.629   2.942   3.145   3.345   3.836 1.000  1500
+deviance 286.239 2.538 283.400 284.400 285.500 287.300 292.352 1.006  1200
+
+For each parameter, n.eff is a crude measure of effective sample size,
+and Rhat is the potential scale reduction factor (at convergence, Rhat=1).
+
+DIC info (using the rule, pD = Dbar-Dhat)
+pD = 2.9 and DIC = 289.1
+DIC is an estimate of expected predictive error (lower deviance is better).
+
+
+So the mean density in arable areas (mu1) is estimated to be higher than that in grassland areas (mu2),
+with the 95% CRI for the difference in mean density (delta) being (-3.742, -0.115). This analysis 
+assumes constant variance between the two types of landuse. 
+
+
+
+Next, we fit the model that relaxes this assumption. In addition, we add a line that computes the 
+difference in the variance of mean density between the two types of landuse:
+
+# Define BUGS model
+sink("h.ttest.txt")
+cat("
+model {
+
+# Priors
+ mu1 ~ dnorm(0,0.001)
+ mu2 ~ dnorm(0,0.001)
+ tau1 <- 1 / ( sigma1 * sigma1)
+ sigma1 ~ dunif(0, 100)
+ tau2 <- 1 / ( sigma2 * sigma2)
+ sigma2 ~ dunif(0, 100)
+
+# Likelihood
+ for (i in 1:n1) {
+    y1[i] ~ dnorm(mu1, tau1) 
+ }
+
+ for (i in 1:n2) {
+    y2[i] ~ dnorm(mu2, tau2) 
+ }
+
+# Derived quantities
+ delta.mean <- mu2 - mu1
+ delta.variance <- (1/tau2) - (1/tau1)
+ 
+}
+",fill=TRUE)
+sink()
+
+# Bundle data: have to select the right data
+win.data <- list(y1 = MMD[LANDUSE == 0], y2 = MMD[LANDUSE == 1], n1 = length(MMD[LANDUSE == 0]),
+ n2 = length(MMD[LANDUSE == 1]))
+
+# Inits function
+inits <- function(){ list(mu1=rnorm(1), mu2=rnorm(1), sigma1 = rlnorm(1), sigma2 = rlnorm(1))}
+
+# Parameters to estimate
+params <- c("mu1","mu2", "delta.mean", "delta.variance", "sigma1", "sigma2")
+
+# MCMC settings
+nc <- 3
+ni <- 2200
+nb <- 200
+nt <- 2
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters = params, model = "h.ttest.txt", 
+n.thin = nt, n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE, working.directory = getwd())
+
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "h.ttest.txt", fit using WinBUGS,
+ 3 chains, each with 2200 iterations (first 200 discarded), n.thin = 2
+ n.sims = 3000 iterations saved
+                  mean    sd    2.5%     25%     50%     75%   97.5%  Rhat n.eff
+mu1              4.921 0.559   3.770   4.559   4.930   5.289   6.036 1.002  1500
+mu2              2.968 0.568   1.855   2.599   2.976   3.343   4.059 1.001  3000
+delta.mean      -1.953 0.809  -3.529  -2.475  -1.958  -1.427  -0.386 1.001  3000
+delta.variance  -7.102 3.935 -15.180  -9.444  -7.005  -4.705   0.545 1.001  3000
+sigma1           3.510 0.423   2.797   3.208   3.466   3.764   4.487 1.002  3000
+sigma2           2.274 0.475   1.586   1.941   2.196   2.520   3.427 1.001  2400
+deviance       282.517 3.167 278.600 280.200 281.800 284.100 290.302 1.003  1100
+
+So there is quite strong evidence for heterogeneous variances of counts in arable and grassland 
+sites. The probability that the variance is different is this (for my MCMC sample):
+
+mean(out$sims.list$delta.variance<0)
+> mean(out$sims.list$delta.variance<0)
+[1] 0.968
+
+
+
+
+4. Modeling the variance
+   ---------------------
+
+Exercise:
+We model the variance in the counts as a function of the elevation of a site.
+
+Solution:
+For this, we also need the elevation of each site. Then, we model a linear effect of elevation on the log
+of the variance, that is, as for the mean in a linear model, we specify a linear model for a transformation
+of the variance of the model.
+
+MMD <- aggregate(hares$mean.density, by = list(hares$site), FUN = mean, na.rm = TRUE)$x
+LANDUSE <- aggregate(as.numeric(hares$landuse), by = list(hares$site), FUN = mean, na.rm = TRUE)$x
+# LANDUSE = 1 is arable
+ELEV <- aggregate(as.numeric(hares$elevation), by = list(hares$site), FUN = mean, na.rm = TRUE)$x
+
+Missing values in the explanatory variables of a model need special attention. Either we must specify
+a prior distribution for them in the model, or we have to 'impute' them. Here, we simply replace NA's
+with the mean elevation.
+
+ELEV[ELEV == 'NaN'] <- mean(ELEV, na.rm = TRUE)
+
+We change the notation somewhat to clarify that a linear model is used to explain variation both in the
+mean AND in the variance of the response (mean density). Note that we also normalise the elevation 
+covariate.
+
+
+# Define model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ alpha1 ~ dnorm(0,0.001)
+ beta1 ~ dnorm(0,0.001)
+ alpha2 ~ dnorm(0,0.001)
+ beta2 ~ dnorm(0,0.001)
+
+# Likelihood
+ for (i in 1:n) {
+    y[i] ~ dnorm(mu[i], tau[i])	# Note that both the mean and the variance are indexed by individual
+        mu[i] <- alpha1 + beta1 *GRASS[i]
+        tau[i] <- 1 / sigma2[i]
+        log(sigma2[i]) <- alpha2 + beta2 *ELEV[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+mean.elev <- mean(ELEV)
+sd.elev = sd(ELEV)
+st.ELEV <- (ELEV - mean.elev) / sd.elev
+win.data <- list(y = MMD, GRASS = LANDUSE-1, ELEV = st.ELEV, n = length(MMD))
+
+# Inits function
+inits <- function(){list(alpha1=rnorm(1), beta1=rnorm(1), alpha2=rnorm(1), beta2=rnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha1","beta1","alpha2","beta2")
+
+# MCMC settings
+nc <- 3
+ni <- 6000
+nb <- 2000
+nt <- 2
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters = params, model = "model.txt", n.thin = nt, 
+n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE, working.directory = getwd(), bugs.directory = bd)
+
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 6000 iterations (first 2000 discarded), n.thin = 2
+ n.sims = 6000 iterations saved
+            mean    sd    2.5%     25%     50%     75%   97.5%  Rhat n.eff
+alpha1     4.889 0.478   3.953   4.567   4.884   5.211   5.825 1.002  1700
+beta1     -2.097 0.839  -3.728  -2.653  -2.107  -1.545  -0.416 1.001  6000
+alpha2     2.231 0.196   1.876   2.093   2.222   2.361   2.637 1.002  1900
+beta2     -0.355 0.211  -0.754  -0.499  -0.368  -0.222   0.089 1.001  5800
+deviance 284.032 2.866 280.500 281.900 283.400 285.500 291.200 1.001  6000
+
+
+So we estimate the mean density in arable areas to be 4.888 and that in grassland areas to be 2.098 less.
+In addition, there is a hint of a negative relationship between the variance of the counts and elevation: sites
+at greater elevations do appear to be less heterogeneous, as can be seen by the negative sign of beta2.
+We can look at the 95% CRI for that parameter and see what proportion of the mass of the 
+posterior is on either side of zero:
+
+mean(out$sims.list$beta2 < 0)
+> mean(out$sims.list$beta2 < 0)
+[1]  0.9436667
+
+So actually, there is quite strong evidence for such a variance-elevation relationship in these data. In
+biological terms, this might suggest that higher sites vary less among each other in the suitability of their
+habitat (as expressed by observed hare density).
+
+
+
+
+
+
+
+ 
+###############################################################
+#                                                             #
+#        Chapter 8: Linear regression                         #
+#                                                             #
+###############################################################
+
+
+
+
+1. Toy frog problem 
+   ----------------
+
+Exercise:
+Fit the linear regression model to a toy data set composed of mass-length data of 5 frogs (exercise
+courtesy of Oscar Ramos).
+
+Solution:
+
+# The data
+mass <- c(10, 20, 23, 32, 35)
+length <- c(5,7,10, 12, 15)
+n <- length(mass)
+plot(length, mass)
+
+
+# Solution with R
+fm <- lm(mass ~ length)
+fm
+abline(fm)
+
+# Solution with WinBUGS
+
+# Write model
+sink("linreg.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.001)
+ beta ~ dnorm(0,0.001)
+ sigma ~ dunif(0, 100)
+
+# Likelihood
+ for (i in 1:n) {
+    y[i] ~ dnorm(mu[i], tau) 
+    mu[i] <- alpha + beta*x[i]
+ }
+
+# Derived quantities
+ tau <- 1/ (sigma * sigma)
+
+# Assess model fit using a sums-of-squares-type discrepancy
+ for (i in 1:n) {
+    residual[i] <- y[i]-mu[i]		# Residuals for observed data
+    predicted[i] <- mu[i]		# Predicted values
+    sq[i] <- pow(residual[i], 2)	# Squared residuals for observed data
+
+# Generate replicate data and compute fit stats for them
+    y.new[i] ~ dnorm(mu[i], tau) # one new data set at each MCMC iteration
+    sq.new[i] <- pow(y.new[i]-predicted[i], 2)	# Squared residuals for new data
+ }
+ fit <- sum(sq[])			# Sum of squared residuals for actual data set
+ fit.new <- sum(sq.new[])	# Sum of squared residuals for new data set
+ test <- step(fit.new - fit)	# Test whether new data set more extreme, mean is Bayesian p-value
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(x=length, y=mass, n=length(length))
+
+# Inits function
+inits <- function(){ list(alpha=rnorm(1), beta=rnorm(1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "sigma", "fit", "fit.new", "test", "predicted")
+
+# MCMC settings
+nc = 3  ;  ni=1200  ;  nb=200  ;  nt=1
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters = params, model = "linreg.txt", n.thin = nt, 
+n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE, bugs.directory="c:/Program files/WinBUGS14/")
+
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "linreg.txt", fit using WinBUGS,
+ 3 chains, each with 1200 iterations (first 200 discarded)
+ n.sims = 3000 iterations saved
+                mean       sd    2.5%    25%    50%     75%    97.5%  Rhat n.eff
+alpha          0.105    8.496 -17.551 -3.495  0.207   3.907   17.592 1.007  1500
+beta           2.435    0.872   0.640  2.076  2.421   2.785    4.144 1.012  3000
+sigma          5.978    6.222   1.819  2.956  4.191   6.520   20.843 1.003  2300
+fit          158.776 1001.987  25.829 33.367 49.140  95.080  772.495 1.005  1700
+fit.new      379.442 2145.839   6.411 32.122 75.090 198.525 2374.349 1.001  2500
+test           0.608    0.488   0.000  0.000  1.000   1.000    1.000 1.001  3000
+predicted[1]  12.277    5.087   1.726 10.258 12.320  14.430   22.250 1.007   810
+predicted[2]  17.147    4.242   9.296 15.630 17.190  18.812   24.691 1.014   620
+predicted[3]  24.450    4.191  17.854 23.240 24.490  25.780   30.872 1.029   620
+predicted[4]  29.319    4.988  21.258 27.887 29.360  30.853   37.000 1.028   820
+predicted[5]  36.623    6.874  24.709 34.400 36.580  38.960   48.220 1.022  1300
+deviance      28.546    5.149  22.760 24.760 27.125  30.832   41.840 1.003  1800
+[...]
+
+# Add line to plot
+lines(length, out$mean$predicted, lwd = 3, col = "red")
+
+Again, ML and Bayesian estimates are virtually identical numerically.
+
+
+
+
+2. Get predictions for frogs with length 16 to 20 length units 
+   -----------------------------------------------------------
+
+One simple way to get such predictions is to simply add the five numbers 16:20 to the length data and
+fill in the mass data accordingly with missing values. These NA's will then be updated automatically 
+as part of the Bayesian model fitting. So we simply change the 'data statement' of the analysis and
+repeat the rest. Specifying the response, y, as a node to be monitored by WinBUGS implicitly defines
+only the missing elements of y to be treated as unknowns.
+
+
+# Bundle data
+x <- c(5,7,10,12,15, 16, 17, 18, 19, 20)
+y <- c(10,20,23,32,35, NA, NA, NA, NA, NA)
+n <- length(x)
+win.data <- list("x","y", "n")
+
+# Inits function
+inits <- function(){ list(alpha=rnorm(1), beta=rnorm(1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha","beta", "sigma", "fit", "fit.new", "predicted", "y")
+
+# MCMC settings
+nc = 3  ;  ni=1200  ;  nb=200  ;  nt=1
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters = params, model = "linreg.txt", 
+n.thin = nt, n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE, 
+bugs.directory="c:/Program files/WinBUGS14/")
+
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "linreg.txt", fit using WinBUGS,
+ 3 chains, each with 1200 iterations (first 200 discarded)
+ n.sims = 3000 iterations saved
+                 mean       sd    2.5%    25%     50%     75%    97.5%  Rhat n.eff
+alpha           0.105    7.827 -16.713 -3.485   0.261   4.030   15.761 1.002  1200
+beta            2.438    0.775   0.866  2.068   2.418   2.798    4.083 1.002  1200
+sigma           5.674    4.494   1.840  2.993   4.252   6.676   18.020 1.002  1000
+fit           372.312  832.299  38.129 75.060 139.050 317.150 2414.349 1.002  1200
+fit.new       506.481 1218.433  22.458 77.260 167.800 421.400 3463.299 1.002  1100
+predicted[1]   12.295    4.596   2.729 10.200  12.310  14.460   21.860 1.003  1600
+predicted[2]   17.171    3.672   9.746 15.540  17.155  18.793   24.921 1.003  2500
+predicted[3]   24.486    3.323  17.929 23.210  24.480  25.790   30.770 1.001  3000
+predicted[4]   29.362    3.927  21.409 27.777  29.325  30.850   37.190 1.002  3000
+predicted[5]   36.676    5.568  25.495 34.388  36.650  38.972   48.291 1.003  2400
+predicted[6]   39.114    6.213  26.359 36.500  39.080  41.690   52.030 1.003  2100
+predicted[7]   41.552    6.884  27.339 38.638  41.485  44.460   55.982 1.003  1900
+predicted[8]   43.990    7.576  28.295 40.785  43.900  47.270   59.830 1.003  1800
+predicted[9]   46.428    8.282  29.248 42.850  46.325  50.073   63.655 1.003  1700
+predicted[10]  48.866    9.000  30.308 44.895  48.745  52.840   67.902 1.003  1600
+y[6]           39.307    9.089  20.129 35.278  39.270  43.133   58.311 1.001  3000
+y[7]           41.713    9.129  23.748 37.267  41.450  45.790   61.744 1.003  2400
+y[8]           43.857   10.453  22.055 39.545  43.800  48.140   64.451 1.001  3000
+y[9]           46.578   11.401  25.187 41.818  46.245  51.103   69.991 1.001  3000
+y[10]          48.920   11.661  25.336 43.977  48.795  53.700   73.092 1.002  2200
+deviance       28.528    4.766  22.750 24.867  27.340  31.070   40.420 1.004   620
+
+
+We see that the means of predicted[6:10] are the same as y[6:10], at least up to MCMC accuracy, but 
+that the posterior sd's differ. This is because the predicted values refer to the expected mass for 
+a frog of given length, while the y refer to the prediction of the mass of an individual frog, with 
+which there is more uncertainty associated.
+
+
+
+
+3. Regression of mean density on year in grassland areas (Swiss hare data)
+   -----------------------------------------------------------------------
+
+hares <- read.table("F:\\a_solutions WB book\\hares.txt", header = TRUE)
+
+First we have to aggregate the data over years and restrict them to the grassland sites.
+
+grass.data <- hares[hares$landuse == "grass",]
+MMD <- aggregate(grass.data$mean.density, by = list(grass.data$year), FUN = mean, na.rm = TRUE)$x
+year <- 1992:2008
+
+Then we plot the data:
+plot(year, MMD, type = "b", lwd = 3, col = "blue", main = "Mean observed density in grassland areas")
+
+We fit fit first a linear and second a quadratic regression model using WinBUGS:
+
+
+# Write model
+sink("linreg.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.001)
+ beta ~ dnorm(0,0.001)
+ sigma ~ dunif(0, 100)
+ tau <- 1/ (sigma * sigma)
+
+# Likelihood
+ for (i in 1:n) {
+    y[i] ~ dnorm(mu[i], tau) 
+    mu[i] <- alpha + beta*x[i]
+    predicted.linear[i] <- mu[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+# win.data <- list(x = year, y=MMD, n=length(MMD))  # Failure to standardise year leads to spurious convergence !
+win.data <- list(x = ((year-mean(year)) / sd(year)), y=MMD, n=length(MMD))
+
+# Inits function
+inits <- function(){ list(alpha=rnorm(1), beta=rnorm(1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "sigma", "predicted.linear")
+
+# MCMC settings
+nc = 3  ;  ni=1200  ;  nb=200  ;  nt=1
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters = params, model = "linreg.txt", n.thin = nt, 
+n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE, bugs.directory="c:/Program files/WinBUGS14/")
+
+print(out, dig = 3)
+
+We then plot the predicted mean density under the linear (straight-line) model:
+
+lines(year, out$mean$predicted.linear, lwd = 3, col = "red")
+
+
+
+Next, the quadratic (curvilinear) model:
+
+# Write model
+sink("quadreg.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.001)
+ beta ~ dnorm(0,0.001)
+ gamma ~ dnorm(0, 0.001)
+ sigma ~ dunif(0, 100)
+ tau <- 1/ (sigma * sigma)
+
+# Likelihood
+ for (i in 1:n) {
+    y[i] ~ dnorm(mu[i], tau) 
+    mu[i] <- alpha + beta*x[i] + gamma * pow(x[i], 2)
+    predicted.quadratic[i] <- mu[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(x=((year-mean(year)) / sd(year)), y=MMD, n=length(MMD))
+
+# Inits function
+inits <- function(){ list(alpha=rnorm(1), beta=rnorm(1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "gamma", "sigma", "predicted.quadratic")
+
+# MCMC settings
+nc = 3  ;  ni=1200  ;  nb=200  ;  nt=1
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters = params, model = "quadreg.txt", n.thin = nt, 
+n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE, bugs.directory="c:/Program files/WinBUGS14/")
+
+print(out, dig = 3)
+
+We then plot the predicted mean density under the quadratic model:
+lines(year, out$mean$predicted.quadratic, lwd = 3, col = "brown")
+
+There is a strong visual impression that the population decline of the Brown hare in grassland sites 
+did not evolve in a straight-line fashion, but that there was a decline, followed by a stabilisation 
+or even slight recovery. We can test for the quadratic effect in the trend by looking at the 
+posterior distribution of the gamma parameter
+
+hist(out$sims.list$gamma, breaks = 40, col = "grey")
+
+The graph and the summary (above) show that zero is a very untypical value for gamma, so that we can 
+assume that the population decline did not evolve linearly.
+
+Note: This exercise provides another example for WinBUGS erroneously indicating convergence: this 
+happened to me first when I forgot to normalise year in the analysis of the model with a linear 
+effect of year, and all the Rhat values were close to one. It was only when I plotted the estimated 
+regression line into the observed data that I noticed that something was wrong with the solution 
+that WinBUGS gave me.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 9: One-way ANOVA                             #
+#                                                             #
+###############################################################
+
+
+
+
+1. Convert the ANOVA to an ANCOVA 
+   ------------------------------
+
+We want to add a single continuous explanatory variate into the (fixed-effects) one-way ANOVA. This 
+transforms our model to what is often called an ANCOVA model. We won't bother with recreating the 
+data to build in an effect of that covariate but just invent it and fit it to show how this is done. 
+I assume that you have the data set in your R workspace already (otherwise, go and take the code to 
+recreate one).
+
+ngroups <- 5			# Number of populations
+nsample <- 10			# Number of snakes in each
+pop.means <- c(50, 40, 45, 55, 60) # Population mean SVL
+sigma <- 3			# Residual sd
+eps <- rnorm(ngroups * nsample, 0, sigma)	# Residuals 
+x <- rep(1:5, rep(nsample, ngroups)) # Indicator for population
+X <- as.matrix(model.matrix(~ as.factor(x)-1)) # Create design matrix
+y <- as.numeric(X %*% as.matrix(pop.means) + eps)
+boxplot(y~x, col="grey", xlab="Population", ylab="SVL", main="", las = 1)
+
+hab <- rnorm(50)	# This is the covariate
+
+
+# Write model
+sink("ancova.txt")		# Change model name (optional)
+cat("
+model {
+   # Priors
+   for (i in 1:5){
+      alpha[i] ~ dnorm(0, 0.001)
+   }
+   beta ~ dnorm(0, 0.01)	# Add prior for coefficient of hab
+   sigma ~ dunif(0, 100)
+
+   # Likelihood
+   for (i in 1:50) {
+        y[i] ~ dnorm(mean[i], tau) 
+        mean[i] <- alpha[x[i]] + beta * hab[i]	# Adapt linear predictor
+   }
+tau <- 1/(sigma*sigma)
+
+}
+",fill=TRUE)
+sink()
+
+# Package data
+win.data <- list("y", "x", "hab")	# Need to add hab to packaged data
+
+# Define function to randomly choose inits	# Add hab covariate
+inits <- function(){ list(alpha = rnorm(5, mean = mean(y)), beta = rnorm(1), sigma = rlnorm(1) )}
+
+# Select parameters you want to estimate
+params <- c("alpha", "sigma", "beta")
+
+# MCMC settings
+ni <- 1200
+nb <- 200
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs (win.data, inits, params, "ancova.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE)
+
+print(out, dig = 3) 
+
+
+
+
+2. Watch shrinkage happen 
+   ----------------------
+
+Exercise:
+Fit both a fixed- and a random-effects ANOVA to the same data set and compare the group mean estimates.
+
+Solution:
+We take the data just generated in exercise 1 and fit the following model:
+
+# Write fixed-effects ANOVA model
+sink("fixefanova.txt")
+cat("
+model {
+   # Priors
+   for (i in 1:5){
+      alpha[i] ~ dnorm(0, 0.001)
+   }
+   sigma ~ dunif(0, 100)
+
+   # Likelihood
+   for (i in 1:50) {
+        y[i] ~ dnorm(mean[i], tau) 
+        mean[i] <- alpha[x[i]]
+   }
+tau <- 1/(sigma*sigma)
+}
+",fill=TRUE)
+sink()
+
+# Package data
+win.data <- list("y", "x")
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(5, mean = mean(y)), sigma = rlnorm(1) )}
+
+# Select parameters you want to estimate
+params <- c("alpha", "sigma")
+
+# MCMC settings
+ni <- 1200   ;    nb <- 200   ;    nt <- 2    ;    nc <- 3
+
+# Start Gibbs sampling
+out.fix <- bugs (win.data, inits, params, "fixefanova.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = TRUE)
+
+print(out.fix, dig = 3) 
+
+# Add fixed-effects group mean estimates into the plot
+points(1:5, out.fix$mean$alpha, col = 'blue', cex = 2, lwd = 3)
+abline(h = 50)
+
+
+
+
+# Write random-effects ANOVA model
+sink("ranefanova.txt")
+cat("
+model {
+for (i in 1:5){
+    pop.mean[i] ~ dnorm(mu, tau.group) # Prior for population means
+    effe[i] <- pop.mean[i] - mu # Population effects as derived quant's
+ }
+ mu ~ dnorm(0,0.001)		# Hyperprior for grand mean svl
+ sigma.group ~ dunif(0, 10)	# Hyperprior for sd of population effects
+ sigma.res ~ dunif(0, 15)	# Prior for residual sd
+
+   # Likelihood
+   for (i in 1:50) {
+        y[i] ~ dnorm(mean[i], tau.res) 
+        mean[i] <- pop.mean[x[i]]
+   }
+ tau.group <- 1 / (sigma.group * sigma.group)
+ tau.res <- 1 / (sigma.res * sigma.res)
+}
+",fill=TRUE)
+sink()
+
+# Package data
+win.data <- list("y", "x")
+
+# Inits function
+inits <- function(){ list(pop.mean = rnorm(5, mean = mean(y)), sigma.res = rlnorm(1) )}
+
+# Select parameters you want to estimate
+params <- c("pop.mean", "sigma.res", "sigma.group")
+
+# MCMC settings
+ni <- 1200   ;    nb <- 200   ;    nt <- 2    ;    nc <- 3
+
+# Start Gibbs sampling
+out.ran <- bugs (win.data, inits, params, "ranefanova.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = TRUE)
+
+print(out.ran, dig = 3) 
+
+# Add random-effects group mean estimates into the plot
+points(1:5, out.ran$mean$pop.mean, col = 'red', cex = 2, lwd = 3, pch = 20)
+
+
+So we see that the random-effects estimates are very slightly pulled in towards the grand mean. That is, 
+they are 'shrunk' to the mean of 50.
+
+
+
+We will observe more shrinkage by discarding most of the information in one group. That way, 
+we will induce much more shrinkage in that group. We will turn the measurements of 8 snakes in 
+population 5 into NA's.  Note that you won't see much shrinkage if you do this for population 1, 
+whose mean is very close to the grand mean anyway.
+
+yy <- y
+yy[42:50] <- NA
+boxplot(y~x, col="grey", xlab="Population", ylab="SVL", main="", las = 1)
+
+
+# Fixed-effects ANOVA
+# Package data
+win.data <- list(y = yy, x = x)
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(5, mean = mean(y)), sigma = rlnorm(1) )}
+
+# Select parameters you want to estimate
+params <- c("alpha", "sigma")
+
+# MCMC settings
+ni <- 1200   ;    nb <- 200   ;    nt <- 2    ;    nc <- 3
+
+# Start Gibbs sampling
+out.fix <- bugs (win.data, inits, params, "fixefanova.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = FALSE)
+
+print(out.fix, dig = 3) 
+
+# Add fixed-effects group mean estimates into the plot
+points(1:5, out.fix$mean$alpha, col = 'blue', cex = 2, lwd = 3)
+abline(h=50)
+
+
+# Random-effects ANOVA
+
+# Inits function
+inits <- function(){ list(pop.mean = rnorm(5, mean = mean(y)), sigma.res = rlnorm(1) )}
+
+# Select parameters you want to estimate
+params <- c("pop.mean", "sigma.res", "sigma.group")
+
+# MCMC settings
+ni <- 1200   ;    nb <- 200   ;    nt <- 2    ;    nc <- 3
+
+# Start Gibbs sampling
+out.ran <- bugs (win.data, inits, params, "ranefanova.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = FALSE)
+
+print(out.ran, dig = 3) 
+
+# Add random-effects group mean estimates into the plot
+points(1:5, out.ran$mean$pop.mean, col = 'red', cex = 2, lwd = 3, pch = 20)
+
+In random-effects models, there is more shrinkage for groups about which we have less information. 
+So in this case, the estimate of the mean of the last group was more shrunk than that for the other groups.
+
+
+
+
+3. One-way ANOVA for mean density (Swiss hares) 
+   -------------------------------------------
+
+Exercise:
+Fit both a fixed- and a random-effects ANOVA to the mean observed counts, treating years as 
+replicates. Note: there are 17 years.
+
+Exercise:
+boxplot(hares$mean.density~hares$year, col="grey", xlab="Year", ylab="Mean counts", main="", las = 1)
+abline(h = mean(hares$mean.density, na.rm = TRUE))
+
+# Write fixed-effects ANOVA model
+sink("fixefanova.txt")
+cat("
+model {
+   # Priors
+   for (i in 1:17){
+      alpha[i] ~ dnorm(0, 0.001)
+   }
+   sigma ~ dunif(0, 100)
+
+   # Likelihood
+   for (i in 1:n) {
+        y[i] ~ dnorm(mean[i], tau) 
+        mean[i] <- alpha[x[i]]
+   }
+tau <- 1/(sigma*sigma)
+}
+",fill=TRUE)
+sink()
+
+# Package data
+win.data <- list(y=hares$mean.density , x= as.numeric(factor(hares$year)), 
+n = length(hares$mean.density))
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(17, mean = mean(y)), sigma = rlnorm(1) )}
+
+# Select parameters you want to estimate
+params <- c("alpha", "sigma")
+
+# MCMC settings
+ni <- 1200   ;    nb <- 200   ;    nt <- 2    ;    nc <- 3
+
+# Start Gibbs sampling
+out.fix <- bugs (win.data, inits, params, "fixefanova.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = TRUE)
+
+print(out.fix, dig = 3) 
+
+# Add fixed-effects group mean estimates into the plot
+points(1:17, out.fix$mean$alpha, col = 'blue', cex = 2, lwd = 3)
+
+# Note: the estimated means are always greater than the medians, shown by the boxplots. This is 
+because the counts are skewed.
+
+
+
+
+# Write random-effects ANOVA model
+sink("ranefanova.txt")
+cat("
+model {
+for (i in 1:17){
+    pop.mean[i] ~ dnorm(mu, tau.group) # Prior for population means
+    effe[i] <- pop.mean[i] - mu # Population effects as derived quant's
+ }
+ mu ~ dnorm(0,0.001)		# Hyperprior for grand mean svl
+ sigma.group ~ dunif(0, 10)	# Hyperprior for sd of population effects
+ sigma.res ~ dunif(0, 15)	# Prior for residual sd
+
+   # Likelihood
+   for (i in 1:n) {
+        y[i] ~ dnorm(mean[i], tau.res) 
+        mean[i] <- pop.mean[x[i]]
+   }
+ tau.group <- 1 / (sigma.group * sigma.group)
+ tau.res <- 1 / (sigma.res * sigma.res)
+}
+",fill=TRUE)
+sink()
+
+# Package data
+win.data <- list(y=hares$mean.density , x= as.numeric(factor(hares$year)), 
+n = length(hares$mean.density))
+
+# Inits function
+inits <- function(){ list(pop.mean = rnorm(17, mean = mean(y)), sigma.res = rlnorm(1) )}
+
+# Select parameters you want to estimate
+params <- c("pop.mean", "sigma.res", "sigma.group")
+
+# MCMC settings
+ni <- 1200   ;    nb <- 200   ;    nt <- 2    ;    nc <- 3
+
+# Start Gibbs sampling
+out.ran <- bugs (win.data, inits, params, "ranefanova.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = TRUE)
+
+print(out.ran, dig = 3) 
+
+# Add random-effects group mean estimates into the plot
+points(1:17, out.ran$mean$pop.mean, col = 'red', cex = 2, lwd = 3, pch = 20)
+
+
+Again, we clearly see the shrinkage towards the grand mean, shown by the thin line.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 10: Two-way ANOVA                            #
+#                                                             #
+###############################################################
+
+
+
+
+1. Fit the two-way ANOVA with interaction (snake toy data set)
+   -----------------------------------------------------------
+
+We fit a two-way ANOVA with interaction to the snake toy data set (chapter 6). Here are the data again:
+mass <- c(6, 8, 5, 7, 9, 11)
+pop <- factor(c(1,1,2,2,3,3))
+region <- factor(c(1,1,1,1,2,2))
+hab <- factor(c(1,2,3,1,2,3))
+svl <- c(40, 45, 39, 50, 52, 57)
+We want to fit a model like the one specified in R by typing lm(mass ~ pop * hab)
+
+We may start with the code in chapter 10.5.2.
+
+
+# Write model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:2){
+    for(j in 1:3) {
+       group.mean[i,j] ~ dnorm(0, 0.0001)
+    }
+ }
+ sigma ~ dunif(0, 100)
+
+# Likelihood
+ for (i in 1:6) {
+    mass[i] ~ dnorm(mean[i], tau) 
+    mean[i] <- group.mean[region[i], hab[i]]
+ }
+
+# Derived quantities
+ tau <- 1 / ( sigma * sigma)
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(mass=mass, hab = as.numeric(hab), region = as.numeric(region))
+
+# Inits function
+inits <- function(){list(sigma = rlnorm(1) )}
+
+# Parameters to estimate
+params <- c("group.mean", "sigma")
+
+# MCMC settings
+ni <- 6000
+nb <- 2000
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(win.data, inits, params, "model.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE)
+
+# Print estimates
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 6000 iterations (first 2000 discarded), n.thin = 2
+ n.sims = 6000 iterations saved
+                  mean      sd     2.5%     25%    50%    75%   97.5%  Rhat n.eff
+group.mean[1,1]  6.262  14.632  -27.362   4.089  6.466  8.663  38.055 1.009  5300
+group.mean[1,2]  7.666  19.216  -37.341   4.618  7.992 11.060  49.904 1.002  4400
+group.mean[1,3]  4.986  19.469  -40.871   1.823  5.037  8.178  47.974 1.003  6000
+group.mean[2,1]  2.014 100.338 -187.507 -66.692  0.953 70.670 199.107 1.001  5000
+group.mean[2,2]  8.528  19.195  -35.532   5.553  8.994 12.102  48.761 1.004  6000
+group.mean[2,3] 10.497  20.405  -34.370   7.439 10.920 13.832  54.461 1.005  6000
+sigma           13.282  17.854    0.520   1.941  5.667 16.552  67.890 1.008   280
+deviance        37.076  16.149    9.026  24.250 36.745 49.740  66.010 1.006   360
+
+For each parameter, n.eff is a crude measure of effective sample size,
+and Rhat is the potential scale reduction factor (at convergence, Rhat=1).
+
+DIC info (using the rule, pD = Dbar-Dhat)
+pD = -5.0 and DIC = 32.1
+DIC is an estimate of expected predictive error (lower deviance is better).
+
+Non-identifiability in a Bayesian analysis is perhaps slightly less easily diagnosed than in a 
+classical analysis, since there is always some information about a parameter: if there is none in 
+the data, then it comes from the prior. In our analysis, we have no information on snakes in habitat 
+1 in region 2, hence the posterior distribution for the associated parameter is determined by the 
+prior. We recognize that by the huge range of the posterior of group.mean[2,1].
+
+
+
+
+2. Fit the two-way ANOVA with interaction (Swiss hare data)
+   --------------------------------------------------------
+
+Exercise:
+Fit the model corresponding to what we would specify in R as lm(mean.density ~ landuse * region)
+
+Solution:
+We may again start with the code in chapter 10.5.2. We note that we have 8 regions and two landuse 
+classes. We look at the data first:
+
+attach(hares)
+aggregate(mean.density, by = list(region, landuse), FUN = mean, na.rm = TRUE)
+table(region, landuse)
+
+So there are no grassland sites in three of the regions: CH.N, CH.SW and CH.W.
+
+As a simple way to check whether the landuse effects are the same in all regions, we compute a 
+derived variable called diff.density and monitor that.
+
+
+# Write model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:2){
+    for(j in 1:8) {
+       group.mean[i,j] ~ dnorm(0, 0.0001)
+    }
+ }
+ sigma ~ dunif(0, 100)
+
+# Likelihood
+ for (i in 1:n) {
+    mean.density[i] ~ dnorm(mean[i], tau) 
+    mean[i] <- group.mean[landuse[i], region[i]]
+ }
+
+# Derived quantities
+ tau <- 1 / ( sigma * sigma)
+ 
+ for(j in 1:8){
+    diff.density[j] <- group.mean[1,j] - group.mean[2,j]
+ }
+ 
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(mean.density=mean.density, region = as.numeric(region), landuse = as.numeric(landuse),
+n = length(mean.density))
+
+# Inits function
+inits <- function(){list(sigma = rlnorm(1) )}
+
+# Parameters to estimate
+params <- c("group.mean", "sigma", "diff.density")
+
+# MCMC settings
+ni <- 6000
+nb <- 2000
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(win.data, inits, params, "model.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE)
+
+# Print estimates
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 6000 iterations (first 2000 discarded), n.thin = 2
+ n.sims = 6000 iterations saved
+                    mean      sd     2.5%      25%      50%      75%    97.5%  Rhat n.eff
+group.mean[1,1]    5.188   0.293    4.611    4.992    5.189    5.384    5.749 1.002  1800
+group.mean[1,2]    3.136   0.908    1.366    2.533    3.128    3.749    4.949 1.001  6000
+group.mean[1,3]    2.600   0.448    1.737    2.297    2.591    2.898    3.503 1.001  6000
+group.mean[1,4]    3.232   0.720    1.792    2.750    3.226    3.724    4.628 1.001  2900
+group.mean[1,5]    5.251   0.385    4.501    4.990    5.251    5.508    6.009 1.001  6000
+group.mean[1,6]    9.625   0.406    8.839    9.349    9.623    9.901   10.420 1.001  6000
+group.mean[1,7]    5.127   0.325    4.496    4.907    5.128    5.338    5.791 1.001  6000
+group.mean[1,8]    4.464   0.673    3.180    3.999    4.451    4.917    5.787 1.001  6000
+group.mean[2,1]    2.446   0.789    0.869    1.924    2.446    2.973    4.000 1.001  6000
+group.mean[2,2]    2.863   0.653    1.572    2.430    2.864    3.286    4.136 1.001  6000
+group.mean[2,3]    2.627   0.530    1.600    2.271    2.627    2.982    3.655 1.001  6000
+group.mean[2,4]    3.819   0.335    3.159    3.592    3.818    4.050    4.477 1.001  6000
+group.mean[2,5]    1.545 100.131 -196.305  -64.917    3.191   68.343  195.602 1.001  4200
+group.mean[2,6]   -0.034  99.123 -191.400  -67.010   -0.792   67.582  194.020 1.001  3700
+group.mean[2,7]    1.294 100.715 -198.205  -66.855    0.496   67.867  195.005 1.001  6000
+group.mean[2,8]    0.557   1.263   -1.938   -0.310    0.548    1.395    3.025 1.001  3900
+sigma              3.322   0.091    3.149    3.260    3.320    3.382    3.508 1.001  3200
+diff.density[1]    2.742   0.839    1.101    2.174    2.756    3.309    4.398 1.001  6000
+diff.density[2]    0.274   1.112   -1.912   -0.452    0.278    1.029    2.449 1.001  6000
+diff.density[3]   -0.027   0.691   -1.371   -0.496   -0.034    0.444    1.323 1.001  6000
+diff.density[4]   -0.587   0.797   -2.149   -1.123   -0.599   -0.051    0.966 1.001  3500
+diff.density[5]    3.706 100.138 -190.305  -63.150    2.153   70.190  201.310 1.001  4200
+diff.density[6]    9.659  99.138 -184.700  -57.932   10.255   76.825  201.105 1.001  3700
+diff.density[7]    3.832 100.706 -189.905  -62.553    4.543   71.830  203.405 1.001  6000
+diff.density[8]    3.907   1.447    1.080    2.936    3.918    4.872    6.762 1.001  4300
+deviance        3545.099   5.291 3537.000 3541.000 3545.000 3548.000 3557.000 1.001  3200
+
+For each parameter, n.eff is a crude measure of effective sample size,
+and Rhat is the potential scale reduction factor (at convergence, Rhat=1).
+
+DIC info (using the rule, pD = Dbar-Dhat)
+pD = 14.0 and DIC = 3559.1
+DIC is an estimate of expected predictive error (lower deviance is better).
+
+
+We see that the estimates for the primary parameters, for which there is no information in the data, 
+the group.means for [2,5], [2,6] and [2,7] are totally influenced by their priors (see huge posterior 
+sd's and 95% credible intervals). As an aside, we also  see that the effective number of parameters,
+pD, is estimated correctly, because we estimate 13 mean parameters and a variance.
+
+In addition, the difference in mean density between the two landuse types in the eight regions seems to 
+differ quite a bit, as we can see from the estimates of the diff.density nodes. (Those for which there 
+is no information for both arable and grassland again have huge posterior sd's and 95% CRI's). 
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 11: General linear model (ANCOVA)            #
+#                                                             #
+###############################################################
+
+
+
+
+1. Probability of a parameter
+   --------------------------
+
+Exercise:
+What's the probability that the mass-length slope is inferior in the Jura than in the Massif Central ?
+
+Solution:
+The derived quantity named "test1" provides the answer for this question since, this is exactly the 
+contrast between the slope in the Jura mountains and that in the Massif Central. So the posterior 
+distribution for that parameter gives us the answer. We plot the posterior distribution first:
+
+hist(out$sims.list$test1, col = "gray")
+abline(v = 0, lwd = 3, col = "red")
+
+A fairly large part of the area of the posterior distribution lies to the left of the red line. This 
+part corresponds to the probability that the slope is smaller in the Jura than in the Massif Central.
+To get a numerical estimate of that probability, we can do the following. Note how useful it is in R 
+to  be able to do calculations on logical values, where TRUE is interpreted as 1 and FALSE as 0.
+
+mean(out$sims.list$test1 < 0)
+> mean(out$sims.list$test1 < 0)
+[1] 0.976
+
+Another possibility would be to use the step function within WinBUGS.
+
+NOTE: As always, your solutions will be numerically different, because you have a slightly different
+data set and also, your MCMC samples are different from mine.
+
+
+
+
+2. 'Neighbouring' models
+   -------------------
+
+It is very insightful to practice "going left and right" around a given model, i.e., go one step more
+or less complex. Here, we reduce the ANCOVA with heterogeneous slopes first to an ANCOVA with 
+homogeneous slopes and then to a simple linear regression. Try to do this without looking at the 
+code in the book.
+
+(b) First we make the slopes the same over all groups. This is done by removing the index of beta.
+
+# Define model
+sink("lm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.group){		
+    alpha[i] ~ dnorm(0, 0.001)	# Intercepts
+ }
+ beta ~ dnorm(0, 0.001)		# There is no only a single slope, so take that out of the loop
+ sigma ~ dunif(0, 100)		# Residual standard deviation
+ tau <- 1 / ( sigma * sigma)
+
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta * length[i]  # remove the index of beta
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(mass = as.numeric(mass), pop = as.numeric(pop), length = as.numeric(scale(length)), 
+n.group = max(as.numeric(pop)), n = n)
+
+# Inits function  # Also note that only a single init for beta now
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(1, 1, 1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+parameters <- c("alpha", "beta", "sigma")	# No change here, since WB interprets beta as a scalar now
+
+# MCMC settings
+ni <- 1200
+nb <- 200
+nt <- 2
+nc <- 3
+
+# Start Markov chains
+out <- bugs(win.data, inits, parameters, "lm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE)
+
+
+
+
+(b) Next, we also make the intercept identical between groups. This brings us back to the simple 
+linear regression. 
+
+# Define model
+sink("lm.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0, 0.001)	# Intercept is also made a scalar now, no loop anymore
+ beta ~ dnorm(0, 0.001)
+ sigma ~ dunif(0, 100)
+ tau <- 1 / ( sigma * sigma)
+
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha + beta* length[i]  # no index on either alpha or beta
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data # pop not needed anymore. WB will crash when provided with data for pop. Also, n.pop obsolete.
+win.data <- list(mass = as.numeric(mass), length = as.numeric(scale(length)), n = n)
+
+# Inits function  # Single init for alpha and for beta now
+inits <- function(){ list(alpha = rnorm(1, 0, 2), beta = rnorm(1, 1, 1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+parameters <- c("alpha", "beta", "sigma")	# No change here
+
+# MCMC settings
+ni <- 1200
+nb <- 200
+nt <- 2
+nc <- 3
+
+# Start Markov chains
+out <- bugs(win.data, inits, parameters, "lm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE)
+
+
+
+
+3. Add a quadratic term to the ANCOVA
+   ----------------------------------
+
+We have to decide whether we assume that the quadratic effect of length is to be the same in all three 
+populations or not. Here we assume that it is different in all three populations.
+
+# Define model
+sink("lm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.group){		
+    alpha[i] ~ dnorm(0, 0.001)	# Intercepts
+    beta1[i] ~ dnorm(0, 0.001)	# Linear effects
+    beta2[i] ~ dnorm(0, 0.001)	# Quadratic effects of length
+   
+ }
+ sigma ~ dunif(0, 100)		# Residual standard deviation
+ tau <- 1 / ( sigma * sigma)
+
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta1[pop[i]]* length[i] + beta2[pop[i]]* pow(length[i],2)
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(mass = as.numeric(mass), pop = as.numeric(pop), length = as.numeric(scale(length)), 
+n.group = max(as.numeric(pop)), n = n)
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta1 = rnorm(n.groups, 1, 1), 
+beta2 = rnorm(n.groups, 1, 1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+parameters <- c("alpha", "beta1", "beta2", "sigma")
+
+# MCMC settings
+ni <- 1200
+nb <- 200
+nt <- 2
+nc <- 3
+
+# Start Markov chains
+out <- bugs(win.data, inits, parameters, "lm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE)
+
+print(out, dig = 3)
+
+
+
+
+4. ANCOVA pop*year for mean.density (Swiss hare data)
+   --------------------------------------------------
+
+Exercise:
+Fit a pop * year model to mean density
+
+Solution:
+
+# Define model
+sink("lm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.group){		
+    alpha[i] ~ dnorm(0, 0.001)	# Intercepts
+    beta1[i] ~ dnorm(0, 0.001)	# Linear effects
+   
+ }
+ sigma ~ dunif(0, 100)		# Residual standard deviation
+ tau <- 1 / ( sigma * sigma)
+
+# Likelihood
+ for (i in 1:n) {
+    mean.density[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta1[pop[i]]* year[i]
+    residual[i] <- mean.density[i] - mu[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+attach(hares)
+win.data <- list(mean.density = mean.density, pop = as.numeric(site), year = as.numeric(scale(year)),
+n.group = max(as.numeric(site)), n = length(mean.density))
+
+
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(56, 0, 2),  beta1 = rnorm(56, 1, 1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+parameters <- c("alpha", "beta1", "sigma", "residual")
+
+# MCMC settings
+ni <- 1200
+nb <- 200
+nt <- 2
+nc <- 3
+
+# Start Markov chains
+out <- bugs(win.data, inits, parameters, "lm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE, DIC = FALSE)
+
+
+print(out, dig = 3)
+
+NOTE: 
+This was a really tricky one: without the DIC=FALSE argument in the function bugs(), WinBUGS crashed 
+and said something about 
+
+-------------------------------
+NIL dereference (read)
+
+ DeviancePlugin.Monitor.Update   [00000080H] 
+	.chain	INTEGER	0
+	.i	INTEGER	0
+	.monitor	DeviancePlugin.Monitor	[01003E90H] 
+ UpdaterActions.UpdateMonitors   [0000011CH] 
+	.chain	INTEGER	0
+	[ MUCH more down here ]
+-------------------------------
+
+Because this cryptic error message said something about the deviance and in a similar case, switching 
+off the calculation of the DIC had helped, I tried that ---- and it DID help. That's one of the 
+things that one just has to know in order to succeed with some analyses with WinBUGS !
+
+
+So to inspect the residuals, we can plot them:
+
+plot(out$mean$residual)
+abline(h = c(-4,-2, 0, 2, 4))
+sum(abs(out$mean$residual) >4 )
+
+We see that there are some outliers (defined here as units with absolute residuals greater than 4).
+However, given that they only make up 13/952, and hence, about 1.4% of the data, this is probably 
+not alarming.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 12: Linear mixed model                       #
+#                                                             #
+###############################################################
+
+
+
+
+1. Turning the LMM into an ANCOVA
+   ------------------------------
+
+Exercise:
+Turn the LMM back into an ANCOVA.
+
+Solution:
+The LMM has explanatory variables pop*length, and the coefficients of both sets of coefficients
+(alpha for pop and beta for length) are assumed to come from one normal distribution each. To turn
+this model back into an ANCOVA, we simply remove these two distributional assumptions. I take my 
+data set generated in 12.2. and the code in 12.4.2. and do the following:
+
+
+# Define model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:ngroups){		
+    alpha[i] ~ dnorm(0, 0.00001)	# Change the priors (don't choose them too tight !)
+    beta[i] ~ dnorm(0, 0.00001)		# No hyperparams anymore
+ }
+
+# Delete the code for the hyperparams
+ #mu.int ~ dnorm(0, 0.001)	# Mean hyperparameter for random intercepts
+ #tau.int <- 1 / (sigma.int * sigma.int)
+ #sigma.int ~ dunif(0, 100)	# SD hyperparameter for random intercepts
+
+ #mu.slope ~ dnorm(0, 0.001)	# Mean hyperparameter for random slopes
+ #tau.slope <- 1 / (sigma.slope * sigma.slope)
+ #sigma.slope ~ dunif(0, 100)	# SD hyperparameter for slopes
+
+ tau <- 1 / ( sigma * sigma)	# Residual precision
+ sigma ~ dunif(0, 100)		# Residual standard deviation
+ 
+
+ # Likelihood			# Note no change at all here
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta[pop[i]]* length[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(mass = as.numeric(mass), pop = as.numeric(pop), length = length, 
+ngroups = max(as.numeric(pop)), n = n)
+
+# Inits function # No inits anymore for hyperparams (they're not in the model anymore)
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(n.groups, 10, 2), 
+sigma = rlnorm(1))}
+
+# Parameters to estimate
+parameters <- c("alpha", "beta", "sigma")
+
+# MCMC settings
+ni <- 2000
+nb <- 500
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(win.data, inits, parameters, "model.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = TRUE)
+
+print(out, dig = 2)
+
+For fun, we can plot the data and the regression lines:
+
+plot(length, mass, col= "grey", cex = 1.5)
+for(i in 1:max(as.numeric(pop))){
+   abline(out$mean$alpha[i], out$mean$beta[i], col = i)
+}
+
+
+
+
+
+2. Fit a random-coefficients regression to mean density (Swiss hares) 
+   ------------------------------------------------------------------
+
+Exercise:
+Fit the model without intercept-slope correlation (mean.density ~ pop * year)
+
+Solution:
+
+# Define model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:ngroups){		
+    alpha[i] ~ dnorm(mu.int, tau.int)	# Random intercepts
+    beta[i] ~ dnorm(mu.slope, tau.slope) # Random slopes
+ }
+
+ mu.int ~ dnorm(0, 0.001)	# Mean hyperparameter for random intercepts
+ tau.int <- 1 / (sigma.int * sigma.int)
+ sigma.int ~ dunif(0, 100)	# SD hyperparameter for random intercepts
+
+ mu.slope ~ dnorm(0, 0.001)	# Mean hyperparameter for random slopes
+ tau.slope <- 1 / (sigma.slope * sigma.slope)
+ sigma.slope ~ dunif(0, 100)	# SD hyperparameter for slopes
+
+ tau <- 1 / ( sigma * sigma)	# Residual precision
+ sigma ~ dunif(0, 100)		# Residual standard deviation
+
+# Likelihood
+ for (i in 1:n) {
+    mean.density[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta[pop[i]]* year[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+
+# Bundle data
+attach(hares)
+win.data <- list(mean.density = mean.density, pop = as.numeric(site), year = as.numeric(scale(year)), 
+ngroups = max(as.numeric(site)), n = length(mean.density))
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(n.groups, 10, 2), 
+mu.int = rnorm(1, 0, 1), sigma.int = rlnorm(1), mu.slope = rnorm(1, 0, 1), sigma.slope = rlnorm(1),
+sigma = rlnorm(1))}
+
+# Parameters to estimate
+parameters <- c("alpha", "beta", "mu.int", "sigma.int", "mu.slope", "sigma.slope", "sigma")
+
+# MCMC settings
+ni <- 2000
+nb <- 500
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(win.data, inits, parameters, "model.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = TRUE)
+
+print(out, dig = 2)
+
+# compare with REML solutions
+library('lme4')
+lme.fit2 <- lmer(mean.density ~ scale(year) + (1 | site) + ( 0+ scale(year) | site))
+lme.fit2
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 13: Introduction to the GLM                  #
+#                                                             #
+###############################################################
+
+
+
+
+1. Predict mean hare density in arable areas
+   -----------------------------------------
+
+Exercise:
+Add a code line that computes mean observed density in arable areas.
+
+Solution:
+We simply add a line that adds alpha and beta and exponentiate the result.
+
+# Define model
+sink("Poisson.t.test.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.001)
+ beta ~ dnorm(0,0.001)
+
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i]) 
+    log(lambda[i]) <- alpha + beta *x[i]
+
+# Fit assessments
+    Presi[i] <- (C[i] - lambda[i]) / sqrt(lambda[i])		# Pearson residuals
+    C.new[i] ~ dpois(lambda[i])					# Replicate data set
+    Presi.new[i] <- (C.new[i] - lambda[i]) / sqrt(lambda[i]) # Pearson resi
+    D[i] <- pow(Presi[i], 2)
+    D.new[i] <- pow(Presi.new[i], 2)
+ }
+
+# Compute mean hare density in arable areas
+mean.arable <- exp(alpha + beta)
+
+# Add up discrepancy measures
+ fit <- sum(D[])
+ fit.new <- sum(D.new[])
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, x = as.numeric(x)-1, n = length(x))
+
+# Inits function
+inits <- function(){ list(alpha=rlnorm(1), beta=rlnorm(1))}
+
+# Parameters to estimate
+params <- c("lambda","alpha", "beta", "mean.arable", "Presi", "fit", "fit.new")
+
+# MCMC settings
+nc <- 3
+ni <- 3000
+nb <- 1000
+nt <- 2
+
+# Start Gibbs sampler
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="Poisson.t.test.txt", n.thin=nt, n.chains=nc, 
+n.burnin=nb, n.iter=ni, debug = TRUE)
+
+print(out, dig = 3)
+
+
+
+
+2. Density difference as a derived quantity
+   ----------------------------------------
+
+Exercise:
+Estimate the difference in density between arable and grassland areas
+
+Solution:
+We add another line of code
+
+# Define model
+sink("Poisson.t.test.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.001)
+ beta ~ dnorm(0,0.001)
+
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i]) 
+    log(lambda[i]) <- alpha + beta *x[i]
+
+# Fit assessments
+    Presi[i] <- (C[i] - lambda[i]) / sqrt(lambda[i])		# Pearson residuals
+    C.new[i] ~ dpois(lambda[i])					# Replicate data set
+    Presi.new[i] <- (C.new[i] - lambda[i]) / sqrt(lambda[i]) # Pearson resi
+    D[i] <- pow(Presi[i], 2)
+    D.new[i] <- pow(Presi.new[i], 2)
+ }
+
+# Compute difference in mean hare density
+difference <- exp(alpha) - exp(alpha + beta)
+
+# Add up discrepancy measures
+ fit <- sum(D[])
+ fit.new <- sum(D.new[])
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, x = as.numeric(x)-1, n = length(x))
+
+# Inits function
+inits <- function(){ list(alpha=rlnorm(1), beta=rlnorm(1))}
+
+# Parameters to estimate
+params <- c("lambda","alpha", "beta", "difference", "Presi", "fit", "fit.new")
+
+# MCMC settings
+nc <- 3
+ni <- 3000
+nb <- 1000
+nt <- 2
+
+# Start Gibbs sampler
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="Poisson.t.test.txt", 
+n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+
+print(out, dig = 3)
+
+To summarize the posterior distribution of the density, we plot it.
+
+hist(out$sims.list$difference, breaks = 50, col = "grey", xlim = c(-10, 5), 
+xlab = "Density difference grassland - arable land")
+abline(v = 0, col = "red", lwd = 2)
+
+
+
+
+3. Migrating raptors
+   -----------------
+
+Exercise:
+Assume that we are counting raptors at some point where bird migration concentrates, for instance 
+at an isthmus like Gibraltar or Panama, at a mountain pass like Col de Bretolet or along a ridge like
+Hawk Mountain. We have seen not a single individual of some special raptor species A during 10 consecutive 
+days. What is the probability to see two or more individuals of species A on day 11 ? Make explicit your 
+reasoning and list the assumptions of your model used to answer the question (this exercise is inspired by
+Bernardo 2003).
+
+Solution:
+We assume that raptors travel independently and that there is a constant probability that one is seen 
+at the observatory. If this is so, then the data (ten zeroes) can be assumed to represent 10 observations 
+from a Poisson distribution, whose mean we want to estimate. Using Bayesian posterior predictive distributions, 
+it is possible the estimate the probability that on the 11th day, or indeed on any other 
+particular day, at least one bird of species A is seen. 
+
+
+# Define the data, i.e., the counts of raptor A counts over 10 days
+C <-c(rep(0,10))
+
+
+# Write model
+sink("raptors.txt")
+cat("
+model {
+
+ # Prior
+ lambda ~ dunif(0,5)
+ 
+ # Likelihood
+ for (i in 1:n) {		# Loop over 10 observations
+     C[i] ~ dpois(lambda) 	# They are assumed to come from a Poisson
+}
+y ~ dpois(lambda)		# To get a prediction for a new day
+}
+",fill=TRUE)
+sink()
+
+# Package data
+win.data <- list(C = C, n = length(C))
+
+# Inits
+inits <- function(){ list(lambda=rlnorm(1))}
+
+# Stuff to get estimates from
+params <- c("lambda", "y")
+
+# MCMC settings
+nc <- 3
+ni <- 15000
+nb <- 3000
+nt <- 2
+
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="raptors.txt", 
+n.thin=nt,n.chains=nc,n.burnin=nb, n.iter=ni, debug = TRUE, bugs.directory = "C:/Program files/WinBUGS14/")
+
+print(out, dig = 5)
+> print(out, dig = 5)
+Inference for Bugs model at "raptors.txt", fit using WinBUGS,
+ 3 chains, each with 15000 iterations (first 3000 discarded), n.thin = 2
+ n.sims = 18000 iterations saved
+            mean      sd    2.5%    25%    50%    75%   97.5%    Rhat n.eff
+lambda   0.10034 0.10100 0.00270 0.0283 0.0696 0.1387 0.37001 1.00100 18000
+y        0.10128 0.33354 0.00000 0.0000 0.0000 0.0000 1.00000 1.00103 18000
+deviance 2.00672 2.01991 0.05401 0.5660 1.3920 2.7750 7.40022 1.00100 18000
+
+For each parameter, n.eff is a crude measure of effective sample size,
+and Rhat is the potential scale reduction factor (at convergence, Rhat=1).
+
+DIC info (using the rule, pD = Dbar-Dhat)
+pD = 0.0 and DIC = 2.0
+DIC is an estimate of expected predictive error (lower deviance is better).
+
+First, don't be confused by the numerical similarity of lambda and the variable y. Lambda is the average 
+number of raptors per day (i.e., the Poisson parameter), while y is a random draw, or actually, a large 
+number of random draws, from the Poisson distribution characterised by that mean.
+
+Then note what may appear to be a paradox to some, namely that we can get a fairly large number 
+of zero observations from a Poisson process and yet, the mean of that process is not 0. To answer the 
+question about the probability of at least one raptor of species A on a given day, we use Bayesian posterior 
+inference, i.e., the fact that a Bayesian mode of inference, unlike frequentist inference that 
+estimates a single point using, e.g., maximum likelihood, gives us a whole distribution that describes 
+the likely magnitude of an unobservable. That unobservable here is the number of raptors per day in a 
+Poisson process with mean equal to lambda. By drawing a single observation from that Poisson process at every
+step of the Gibbs sampler for lambda, we furthermore fully incorporate in our assessment the entire 
+uncertainty about lambda. Let's plot the posterior distribution of the number of raptors A per day in this 
+Poisson process:
+
+hist(out$sims.list$y, col = "grey", xlab = "Number of raptors A per day")
+
+It seems that under a Poisson(0.10034) process, the most likely observation is indeed zero, but that 
+sometimes we also observe one's and rarely two's or even higher counts sometimes:
+
+table(out$sims.list$y)
+> table(out$sims.list$y)
+
+    0     1     2     3 
+16352  1480   161     7 
+
+To estimate the probability that we see at least one raptor of species A during any given day, we express 
+the proportion of cases with one or more individuals seen among all random draws from the modeled process.
+
+more.than.0 <- out$sims.list$y >0	# Note calculation with logical funct'n
+prob.one.or.more <- sum(more.than.0) / length(more.than.0)
+prob.one.or.more
+> prob.one.or.more
+[1] 0.09155556
+
+Hence, there is a 9% probability to see one or more individuals per day.
+
+
+
+
+4. Modeling mean density when only zeroes are observed in one group
+   ----------------------------------------------------------------
+
+Exercise:
+Take the simulated hare data from this chapter and turn all counts in one of the landuse types
+
+Solution:
+We may get another sample of hare counts and turn the first 10 to zero:
+n.sites <- 10
+x <- gl(n = 2, k = n.sites, labels = c("grassland", "arable"))
+n <- 2*n.sites
+lambda <- exp(0.69 + 0.92*(as.numeric(x)-1)) # x has levels 1 and 2, not 0 and 1
+C <- rpois(n = n, lambda = lambda)			# Add Poisson noise
+C[1:10] <- 0
+C
+
+First, the analysis using maximum likelihood:
+poisson.t.test <- glm(C ~ x, family = poisson)	# Fit the model
+summary(poisson.t.test)					# t-Test
+anova(poisson.t.test, test = "Chisq")		# Likelihood ratio test (LRT)
+
+We see that something went wrong with the algorithm, since the standard errors of the estimates are huge,
+and furthermore, the estimates look nothing like the numbers we put into the data set.
+
+
+Next, the analysis using Bayesian posterior inference:
+
+# Define model
+sink("Poisson.t.test.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.001)
+ beta ~ dnorm(0,0.001)
+
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i]) 
+    log(lambda[i]) <- alpha + beta *x[i]
+ }
+ 
+# Compute difference in mean hare density
+mean.grass <- exp(alpha)
+mean.arable <- exp(alpha + beta)
+difference <- mean.grass - mean.arable
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, x = as.numeric(x)-1, n = length(x))
+
+# Inits function
+inits <- function(){ list(alpha=rlnorm(1), beta=rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "mean.grass", "mean.arable", "difference")
+
+# MCMC settings
+nc <- 3
+ni <- 20000
+nb <- 10000
+nt <- 10
+
+# Start Gibbs sampler
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="Poisson.t.test.txt", 
+n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+print(out, dig = 3)
+
+We see that Bayesian inference is more robust here.
+
+
+
+
+5. Swiss hare counts in arable and grassland areas
+   -----------------------------------------------
+
+Exercise:
+Fit a 'Poisson t-test' to the Swiss hare counts (not the density) for year 2000.
+
+Solution:
+Get min counts at each site and landuse indicators for the year 2000
+C <- apply(cbind(hares$count1[hares$year == 2000], hares$count2[hares$year == 2000]), 1, min, na.rm = TRUE) 
+C[C == Inf] <- NA	# These are sites without counts in 2000
+grass <- as.numeric(hares$landuse[hares$year == 2000]) - 1
+
+# Define model
+sink("Poisson.t.test.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.001)
+ beta ~ dnorm(0,0.001)
+
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i]) 
+    log(lambda[i]) <- alpha + beta *x[i]
+ }
+ 
+# Compute difference in mean hare density
+mean.arable <- exp(alpha)
+mean.grass <- exp(alpha + beta)
+difference <- mean.arable - mean.grass
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, x = grass, n = length(C))
+
+# Inits function
+inits <- function(){ list(alpha=rlnorm(1), beta=rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "mean.grass", "mean.arable", "difference")
+
+# MCMC settings
+nc <- 3
+ni <- 3000
+nb <- 1000
+nt <- 2
+
+# Start Gibbs sampler
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="Poisson.t.test.txt", 
+n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+print(out, dig = 3)
+
+
+It may be inadequate to assume that all the variability between counts will be accounted for by the Poisson 
+variance. Sites vary in size and other things, and this will introduce much overdispersion. We can simply 
+see this by comparing the residual deviance with the residual d.f, when fitting the GLM per maximum 
+likelihood.
+
+poisson.t.test <- glm(C ~ grass, family = poisson)	# Fit the model
+summary(poisson.t.test)					# t-Test
+
+The residual deviance is about 20 times greater than the residual d.f., whereas it should be about the same
+magnitude under the Poisson assumption.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 14: GLM specialities                         #
+#                                                             #
+###############################################################
+
+
+
+
+1. Estimating a coefficient for an offset variable
+   -----------------------------------------------
+
+Exercise:
+Declaring log(A) as an offset means that log(A) enters the linear predictor of a GLM with a coefficient fixed
+at 1. This entails a precise interpretation of the response as a density then. In this sense, it may be 
+confusing to say 'we estimate a coefficient for an offset', since some might say that the variable then
+ceases to be an offset. Whatever, an offset is equivalent to the assumption that there is a constant
+proportionality between y and A in a model such as y = g(theta), log(theta) = log(A) + stuff. This may well
+not be true and we may want to test this assumption.
+
+Solution:
+We generate a data set or take the old one again.
+n.site <- 10
+A <- runif(n = 2*n.site, 2,5)		# Areas range in size from 2 to 5 km2
+x <- gl(n = 2, k = n.site, labels = c("grassland", "arable"))
+linear.predictor <- log(A) + 0.69 +(0.92*(as.numeric(x)-1))
+lambda <- exp(linear.predictor)
+C <- rpois(n = 2*n.site, lambda = lambda)	# Add Poisson noise
+
+Then we specify a coefficient, alpha0, for the explanatory variable logA.
+
+# Define model
+sink("model.txt")
+cat("
+model {
+# Priors
+ alpha0 ~ dnorm(0,0.001) 
+ alpha ~ dnorm(0,0.001)
+ beta ~ dnorm(0,0.001)
+
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i]) 
+    log(lambda[i]) <- alpha0 * logA[i] + alpha + beta *x[i]	# Note former 'offset'
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, x = as.numeric(x)-1, logA = log(A), n = length(x))
+
+# Inits function
+inits <- function(){ list(alpha=rlnorm(1), beta=rlnorm(1))}
+
+# Parameters to estimate
+params <- c("lambda", "alpha0", "alpha", "beta")
+
+# MCMC settings
+nc <- 3
+ni <- 11000
+nb <- 1000
+nt <- 2
+
+# Start Gibbs sampling
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="model.txt", n.thin=nt, 
+n.chains=nc,n.burnin=nb, n.iter=ni, debug = TRUE)
+print(out, dig = 3)
+
+To test whether alpha0 could also be assumed to be equal to 1 we can plot the posterior distribution and see
+how likely values other then 1 are.
+
+hist(out$sims.list$alpha0, col = "grey", breaks = 50)
+abline(v = 1, col = "red", lwd = 2)
+
+We see that 1 is not an unusual value, so we can just as well take log(A) as an offset.
+
+
+
+
+2. Swiss hare counts in arable and grassland areas
+   -----------------------------------------------
+
+Exercise:
+Fit a 'Poisson t-test' to the Swiss hare counts for year 2000 accounting for variable area size by an offset 
+and overdispersion by a random site effect. Also test for a constant proportionality between counts and area.
+
+Solution:
+Get min counts at each site and landuse indicators for the year 2000
+C <- apply(cbind(hares$count1[hares$year == 2000], hares$count2[hares$year == 2000]), 1, min, na.rm = TRUE) 
+C[C == Inf] <- NA	# These are sites without counts in 2000
+GRASS <- as.numeric(hares$landuse[hares$year == 2000]) - 1
+AREA <- as.numeric(hares$area[hares$year == 2000])
+
+
+# Define model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.001)
+ beta ~ dnorm(0,0.001)
+ tau <- 1 / (sd * sd)
+ sd ~ dunif(0, 3)
+
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i]) 
+    log(lambda[i]) <- logA[i] + alpha + beta * x[i] + eps[i]
+    eps[i] ~ dnorm(0, tau)
+ }
+ 
+# Compute difference in mean hare density
+mean.arable <- exp(alpha)
+mean.grass <- exp(alpha + beta)
+difference <- mean.arable - mean.grass
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, x = GRASS, n = length(C), logA = log(AREA))
+
+# Inits function
+inits <- function(){ list(alpha=rlnorm(1), beta=rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "mean.grass", "mean.arable", "difference", "sd")
+
+# MCMC settings
+nc <- 3
+ni <- 3000
+nb <- 1000
+nt <- 2
+
+# Start Gibbs sampler
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="model.txt", 
+n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 3000 iterations (first 1000 discarded), n.thin = 2
+ n.sims = 3000 iterations saved
+               mean    sd    2.5%     25%     50%     75%   97.5%  Rhat n.eff
+alpha         1.295 0.168   0.969   1.185   1.298   1.408   1.627 1.046    49
+beta         -0.771 0.290  -1.311  -0.971  -0.770  -0.582  -0.201 1.017   130
+mean.grass    1.737 0.418   1.062   1.434   1.695   1.980   2.680 1.004  1000
+mean.arable   3.704 0.623   2.635   3.270   3.664   4.090   5.091 1.050    46
+difference    1.967 0.755   0.510   1.473   1.962   2.455   3.525 1.036    66
+sd            0.845 0.109   0.652   0.768   0.837   0.914   1.074 1.001  3000
+deviance    272.773 9.967 255.700 265.600 272.000 278.925 294.000 1.001  3000
+
+For each parameter, n.eff is a crude measure of effective sample size,
+and Rhat is the potential scale reduction factor (at convergence, Rhat=1).
+
+DIC info (using the rule, pD = Dbar-Dhat)
+pD = 43.3 and DIC = 316.1
+DIC is an estimate of expected predictive error (lower deviance is better).
+
+Note that now mean.grass and mean.arable are densities (i.e., counts per unit area defined by the variable A).
+
+
+
+Next, we fit a coefficient for log(A) to see whether density is constant over all area sizes.
+
+# Define model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ alpha0 ~ dnorm(0,0.01)		# Reduced uncertainty of priors a bit
+ alpha ~ dnorm(0,0.01)
+ beta ~ dnorm(0,0.01)
+ tau <- 1 / (sd * sd)
+ sd ~ dunif(0, 2)
+
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i]) 
+    log(lambda[i]) <- alpha0 * logA[i] + alpha + beta * x[i] + eps[i]
+    eps[i] ~ dnorm(0, tau)
+ }
+ 
+# Compute difference in mean hare density
+mean.arable <- exp(alpha)
+mean.grass <- exp(alpha + beta)
+difference <- mean.arable - mean.grass
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, x = GRASS, n = length(C), logA = log(AREA))
+
+# Inits function
+inits <- function(){ list(alpha=rlnorm(1), beta=rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha0", "alpha", "beta", "mean.grass", "mean.arable", "difference", "sd")
+
+# MCMC settings # Note longer chains 
+nc <- 3
+ni <- 30000
+nb <- 10000
+nt <- 20
+
+# Start Gibbs sampler
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="model.txt", 
+n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+print(out, dig = 3)
+
+> print(out, dig = 3)
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 30000 iterations (first 10000 discarded), n.thin = 20
+ n.sims = 3000 iterations saved
+               mean    sd    2.5%     25%     50%     75%   97.5%  Rhat n.eff
+alpha0        1.358 0.241   0.885   1.197   1.349   1.518   1.842 1.036    74
+alpha         0.663 0.449  -0.253   0.378   0.691   0.963   1.538 1.025    94
+beta         -0.795 0.284  -1.377  -0.982  -0.785  -0.599  -0.249 1.002  1100
+mean.grass    0.993 0.524   0.331   0.625   0.886   1.242   2.269 1.026    88
+mean.arable   2.144 0.998   0.776   1.459   1.996   2.621   4.653 1.025    94
+difference    1.151 0.662   0.282   0.716   1.021   1.431   2.869 1.030   160
+sd            0.844 0.112   0.654   0.765   0.833   0.911   1.105 1.002  1000
+deviance    271.934 9.939 254.297 265.100 271.200 278.000 293.100 1.001  3000
+
+For each parameter, n.eff is a crude measure of effective sample size,
+and Rhat is the potential scale reduction factor (at convergence, Rhat=1).
+
+DIC info (using the rule, pD = Dbar-Dhat)
+pD = 43.2 and DIC = 315.1
+DIC is an estimate of expected predictive error (lower deviance is better).
+
+Note that now, mean.grass and mean.arable are no longer the mean density in the two landuse types.
+
+mean(out$sims.list$alpha0 > 1)
+
+So there is quite a bit of evidence for higher densities in larger sites.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 15: Poisson ANCOVA                           #
+#                                                             #
+###############################################################
+
+
+
+
+1. Multiple Poisson regression
+   ---------------------------
+
+Exercise:
+Add another explanatory variable into the model.
+
+Solution:
+We create 300 values for our new explanatory variable.
+
+nonsense <- runif(300, -2, 2)
+
+
+# Define model
+sink("glm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(0, 0.01)		# Intercepts
+    beta[i] ~ dnorm(0, 0.01)		# Slopes
+ }
+ delta ~ dnorm(0, 0.01)			# Slope of nonsense
+ 
+
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i])		# The random variable
+    lambda[i] <- exp(alpha[pop[i]] + beta[pop[i]] * length[i] + delta * nonsense[i])
+ }	# Note double-indexing: alpha[pop[i]]
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, pop = as.numeric(pop), n.groups = n.groups, length = length, n = n,
+nonsense = nonsense)
+
+# Inits function
+inits <- function(){list(alpha=rlnorm(n.groups,3,1), beta=rlnorm(n.groups,2,1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "delta")
+
+# MCMC settings
+ni <- 4500
+nb <- 1500
+nt <- 5
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "glm.txt", 
+n.thin = nt, n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE)
+print(out, dig = 3)
+
+The posterior distribution of the coefficient for nonsense sits on zero, therefore we have not detected
+any nonsense effects on the mite counts.
+
+
+
+
+2. Polynomial Poisson regression
+   -----------------------------
+
+Exercise:
+We check for the effect of wing-length squared on the mite counts, without building in this effect into the
+data set.
+
+Solution:
+We fit a model with population-specific quadratic terms of length
+
+# Define model
+sink("glm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(0, 0.01)		# Intercepts
+    beta1[i] ~ dnorm(0, 0.01)		# Slopes of linear terms
+    beta2[i] ~ dnorm(0, 0.01)		# Slopes of quadratic terms
+ }
+ 
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i])		# The random variable
+    lambda[i] <- exp(alpha[pop[i]] + beta1[pop[i]] * length[i] + beta2[pop[i]] * pow(length[i], 2))
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, pop = as.numeric(pop), n.groups = n.groups, length = length, n = n)
+
+# Inits function
+inits <- function(){list(alpha=rlnorm(n.groups,3,1), beta1=rlnorm(n.groups,2,1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta1", "beta2")
+
+# MCMC settings
+ni <- 10000
+nb <- 5000
+nt <- 5
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "glm.txt", 
+n.thin = nt, n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE)
+print(out, dig = 3)
+
+Note: I had to use quite long chains to achieve convergence.
+
+
+
+
+3. Poisson ANCOVA for Swiss hare counts
+   ------------------------------------
+
+Exercise:
+Fit a Poisson regression that expresses counts as a function of site and year (note: this is essentially the
+model that people use to analyse bird counts all over Europe in monitoring programs). You can account for
+variable area by fitting log(area) as an offset.
+
+Solution:
+# Define model
+sink("glm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(0, 0.01)		# Intercepts
+    beta1[i] ~ dnorm(0, 0.01)		# Slopes of linear terms
+ }
+ 
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i])		# The random variable
+    lambda[i] <- exp(logA[i] + alpha[pop[i]] + beta1[pop[i]] * year[i])
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+attach(hares)
+npop <- max(as.numeric(site))
+win.data <- list(C = count1, pop = as.numeric(site), n.groups = npop, 
+year = as.numeric(scale(year)), n = length(count1), logA = log(area))
+
+# Inits function
+inits <- function(){list(alpha=rnorm(npop), beta1=rnorm(npop))}
+
+# Parameters to estimate
+params <- c("alpha", "beta1", "lambda")
+
+# MCMC settings
+ni <- 1000
+nb <- 500
+nt <- 5
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "glm.txt", 
+n.thin = nt, n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE, DIC = FALSE)
+# Note: got NIL dereference error, so switched DIC off
+
+print(out, dig = 3)
+
+# Quick plot of expected count (note lambda contains logA)
+plot(1992:2008, out$mean$lambda[1:17], ylim = c(0, 200), main = "Expected counts (not density)", 
+ylab = "Exp. count", xlab = "Year", lwd = 1, type = "l")
+
+for(i in 2:56){
+   start.index <- (i - 1) * 17 + 1
+   end.index <- i * 17
+   lines(1992:2008, out$mean$lambda[start.index:end.index], col = i)
+}
+
+# Compare with ML solutions
+yscale <- scale(year)
+
+fm <- glm(count1 ~ site * yscale - 1 -yscale, family = poisson, offset = log(area))
+summary(fm)
+predict.glm(fm)
+
+
+# Compare estimates of intercepts and slopes: numerically about the same, as usual
+par(mfrow = c(2,1))
+plot(fm$coef[1:56], out$mean$alpha)
+abline(0,1)
+plot(fm$coef[57:112], out$mean$beta)
+abline(0,1)
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 16: Poisson GLMM                             #
+#                                                             #
+###############################################################
+
+
+
+
+1. Random-coefficients Poisson regression (Swiss hare data)
+   --------------------------------------------------------
+
+Exercise:
+Fit the random-coefficients model (site * year) to the counts. Take a single count per year and site and
+also include log(area) as an offset.
+
+Solution:
+
+# REML solution for fun
+library('lme4')
+glmm.fit <- glmer(count1 ~ year + (1 | site) + ( 0 + year | site), family = poisson, offset = log(area))
+# Does not converge. Try scaling year
+
+yr <- as.numeric(scale(year))
+
+glmm.fit <- glmer(count1 ~ yr + (1 | site) + ( 0 + yr | site), family = poisson, offset = log(area))
+glmm.fit
+
+So we see that classical numerical solutions may often go astray.
+
+
+
+Next the solution in BUGS
+
+# Define model
+sink("glmm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(mu.int, tau.int)	# Intercepts
+    beta[i] ~ dnorm(mu.beta, tau.beta)	# Slopes
+}
+ mu.int ~ dnorm(0, 0.00001)	# Hyperparameter for random intercepts
+ tau.int <- 1 / (sigma.int * sigma.int)
+ sigma.int ~ dunif(0, 5)
+
+ mu.beta ~ dnorm(0, 0.00001)	# Hyperparameter for random slopes
+ tau.beta <- 1 / (sigma.beta * sigma.beta)
+ sigma.beta ~ dunif(0, 5)
+
+
+# Poisson likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i])
+    lambda[i] <- A[i] * exp(alpha[pop[i]] + beta[pop[i]]* year[i])
+    # lambda[i] <- exp(log(A[i]) + alpha[pop[i]] + beta[pop[i]]* year[i]) # Alternative formulation for offset
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+n.groups = max(as.numeric(site))
+win.data <- list(C = count1, pop = as.numeric(site), year = yr, n.groups = n.groups, n = length(count1),
+A = area)
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(n.groups, 0, 2), mu.int = rnorm(1, 0, 1), 
+sigma.int = rlnorm(1), mu.beta = rnorm(1, 0, 1), sigma.beta = rlnorm(1))}
+
+# Parameters to estimate
+parameters <- c("alpha", "beta", "mu.int", "sigma.int", "mu.beta", "sigma.beta")
+
+# MCMC settings
+ni <- 2000
+nb <- 500
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(win.data, inits, parameters, "glmm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE)
+print(out, dig = 3)
+
+glmm.fit
+
+We get the usual, numerically comparable estimates.
+
+
+
+
+
+
+
+
+2. Random-coefficients Poisson regression with landuse-dependence of hyperparams (Swiss hares)
+   -------------------------------------------------------------------------------------------
+
+Exercise:
+Now make the hyperparams dependent on landuse.
+
+Solution:
+Perhaps this could also be done with REML using lmer(), but I don't know how. In BUGS we simply define the 
+hyperparameters as vectors of length two, rather than as scalars as before, and make them dependent on landuse
+as an explanatory variable at the level of the sites. That is, we introduce LU as an explanatory variable of 
+length 56.
+
+attach(hares)
+yr <- as.numeric(scale(year))
+LU <- as.numeric(tapply(as.numeric(landuse), as.numeric(site), mean))	
+# without the leading as.numeric() WinBUGS would crash
+
+
+# Define model
+sink("glmm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){	
+       alpha[i] ~ dnorm(mu.int[LU[i]], tau.int[LU[i]])	# Intercepts 
+       beta[i] ~ dnorm(mu.beta[LU[i]], tau.beta[LU[i]])	# Slopes
+ }
+
+ for(j in 1:2){
+    mu.int[j] ~ dnorm(0, 0.00001)	# Hyperparameter for random intercepts
+    tau.int[j] <- 1 / (sigma.int[j] * sigma.int[j])
+    sigma.int[j] ~ dunif(0, 5)
+
+    mu.beta[j] ~ dnorm(0, 0.00001)	# Hyperparameter for random slopes
+    tau.beta[j] <- 1 / (sigma.beta[j] * sigma.beta[j])
+    sigma.beta[j] ~ dunif(0, 5)
+ }
+
+# Poisson likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i])
+    lambda[i] <- A[i] * exp(alpha[pop[i]] + beta[pop[i]]* year[i])
+    # lambda[i] <- exp(log(A[i]) + alpha[pop[i]] + beta[pop[i]]* year[i]) # Alternative formulation for offset
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+n.groups = max(as.numeric(site))
+win.data <- list(C = count1, pop = as.numeric(site), year = yr, n.groups = n.groups, n = length(count1),
+A = area, LU = LU)
+
+# Inits function  # Must get two values for the four hyperparams
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(n.groups, 0, 2), mu.int = rnorm(2, 0, 1), 
+sigma.int = runif(2), mu.beta = rnorm(2, 0, 1), sigma.beta = runif(2))}
+
+# Parameters to estimate
+parameters <- c("alpha", "beta", "mu.int", "sigma.int", "mu.beta", "sigma.beta")
+
+# MCMC settings
+ni <- 2000
+nb <- 500
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(win.data, inits, parameters, "glmm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, 
+debug = TRUE)
+print(out, dig = 3)
+
+>From looking at the posterior summaries, we conclude that, indeed, the hyperparameters for describing the 
+inter-site variation in intercepts and slopes of the trends in density seem to vary between the two 
+landuse types. We could easily test this formally by looking at the posterior distributions for 
+derived quantities.
+
+This is an excellent example for how WinBUGS frees the ecological modeller in you. Fitting such a custom model,
+which tests a very specific ecological hypothesis, would be very challenging using other software, I believe.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 17: Binomial GLM for two groups              #
+#                                                             #
+###############################################################
+
+
+
+
+1. Bernoulli data as 'disaggregated' Binomial data
+   -----------------------------------------------
+
+Exercise:
+Simulate and analyse the data in the chapter at a site-by-site level.
+
+Solution:
+We will treat the surveys for the two species at the same site as independent.
+
+Generate the data:
+n <- 50				# Number of sites
+p.cr <- 13/50			# Occurrence.AND.detection probability Cross-leaved
+p.ch <- 29/50			# Occurrence.AND.detection probability Chiltern gentian
+
+C.cr <- rbinom(n, 1, prob = p.cr)   ;   C.cr		# Add Binomial noise
+C.ch <- rbinom(n, 1, prob = p.ch)   ;   C.ch		# Add Binomial noise
+C <- c(C.cr, C.ch)
+species <-  gl(n = 2, k = 50, length = 100, labels = c("Cross-leaved gentian","Chiltern gentian"))
+
+tapply(C, species, mean)
+
+
+
+And here is the analysis using WinBUGS:
+
+# Define model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.01)
+ beta ~ dnorm(0,0.01)
+
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dbern(p[i])		# Bernoulli has a single param
+    logit(p[i]) <- alpha + beta * species[i]
+ }
+# Derived quantities
+ Occ.cross <- exp(alpha) / (1 + exp(alpha))
+ Occ.chiltern <- exp(alpha + beta) / (1 + exp(alpha + beta))
+ Occ.Diff <- Occ.chiltern - Occ.cross		# Test quantity
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, n = 100, species = as.numeric(species)-1)
+
+# Inits function
+inits <- function(){ list(alpha=rlnorm(1), beta=rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "Occ.cross", "Occ.chiltern", "Occ.Diff")
+
+# MCMC settings
+nc <- 3
+ni <- 1200
+nb <- 200
+nt <- 2
+
+# Start Gibbs sampling
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="model.txt", n.thin=nt, 
+n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+
+print(out, dig = 3)
+
+This illustrates the fact that a binomial is simply a sum of N Bernoullis.
+
+
+
+
+2. Probability of occurrence of a 'large' count (Swiss hares)
+   ----------------------------------------------------------
+
+Exercise:
+Model the landuse-dependence of the occurrence of a 'large' count. Define 'large' appropriately.
+
+Solution:
+We will analyse the first count only and first look at the distribution of those counts to decide on what 
+'large' could mean. We will assume counts from different years in the same area as independent and not bother
+about site effects.
+
+attach(hares)
+hist(count1, breaks = 40, col = "grey")
+
+One might choose 100 as a threshold. Check how many counts are greater than 100.
+
+sum(count1 > 100, na.rm = TRUE)
+> sum(count1 > 100, na.rm = TRUE)
+[1] 22
+
+That's not too many, so we try a lower threshold, 50 say. 
+sum(count1 > 50, na.rm = TRUE)
+
+It turns out there are 106 such counts, and we will use that as a threshold to designate a count as large.
+large <- as.numeric(count1 > 50)
+
+To analyse the landuse-dependence of the occurrence of a large count, we can simply adapt the code from 
+exercise 1 above.
+
+
+# Define model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ alpha ~ dnorm(0,0.01)
+ beta ~ dnorm(0,0.01)
+
+# Likelihood
+ for (i in 1:n) {
+    large[i] ~ dbern(p[i])
+    logit(p[i]) <- alpha + beta * grass[i]
+ }
+# Derived quantities
+ mean.arable <- exp(alpha) / (1 + exp(alpha))
+ mean.grass <- exp(alpha + beta) / (1 + exp(alpha + beta))
+ difference <- mean.arable - mean.grass		# Test quantity
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(large = large, n = length(large), grass = as.numeric(landuse)-1)
+
+# Inits function
+inits <- function(){ list(alpha=rlnorm(1), beta=rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "mean.arable", "mean.grass", "difference")
+
+# MCMC settings
+nc <- 3
+ni <- 1200
+nb <- 200
+nt <- 2
+
+# Start Gibbs sampling
+out <- bugs(data=win.data, inits=inits, parameters.to.save=params, model.file="model.txt", n.thin=nt, 
+n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 1200 iterations (first 200 discarded), n.thin = 2
+ n.sims = 1500 iterations saved
+               mean    sd    2.5%     25%     50%     75%   97.5%  Rhat n.eff
+alpha        -1.522 0.117  -1.750  -1.599  -1.518  -1.441  -1.300 1.001  1500
+beta         -0.651 0.265  -1.181  -0.825  -0.647  -0.480  -0.137 1.001  1500
+mean.arable   0.180 0.017   0.148   0.168   0.180   0.191   0.214 1.001  1500
+mean.grass    0.104 0.023   0.066   0.088   0.103   0.119   0.152 1.001  1500
+difference    0.075 0.028   0.019   0.058   0.076   0.094   0.126 1.001  1500
+deviance    579.717 1.986 577.800 578.300 579.100 580.500 584.900 1.002  1500
+
+For each parameter, n.eff is a crude measure of effective sample size,
+and Rhat is the potential scale reduction factor (at convergence, Rhat=1).
+
+DIC info (using the rule, pD = Dbar-Dhat)
+pD = 2.0 and DIC = 581.7
+DIC is an estimate of expected predictive error (lower deviance is better).
+
+
+Conclusion: If we define a count of 51 and greater as 'large', then there is a 18% chance that a count in an
+arable site is large, compared to a 10.4% chance in grassland sites. This difference is 'significant', because
+the 95% credible interval for the difference (0.019-0.126) does not cover zero. 
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 18: Binomial ANCOVA                          #
+#                                                             #
+###############################################################
+
+
+
+
+1. Add a further explanatory variable X
+   ------------------------------------
+
+Exercise:
+Modify the model in this chapter by adding to it the main effect of a further explanatory variable, say X, 
+along with its interaction with the explanatory variable named wet.
+
+Solution:
+We will not reassemble the data but use the one we got by executing the code in the chapter. We simply
+generate a new random explanatory variable called X and then build the product of it with wetness.
+
+X <- runif(length(wetness))
+Xwet <- X * wetness
+
+
+Here is the analysis using WinBUGS:
+
+# Define model
+sink("glm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(0, 0.01)		# Intercepts
+    beta1[i] ~ dnorm(0, 0.01)		# Slopes of wetness 
+ }
+    beta2 ~ dnorm(0, 0.01)		# Slope of X
+    gamma ~ dnorm(0, 0.01)		# Slope of interaction X with wet
+ 
+# Likelihood
+ for (i in 1:n) {
+    C[i] ~ dbin(p[i], N[i])
+    logit(p[i]) <- alpha[pop[i]] + beta1[pop[i]]* wetness[i] + beta2 * X[i] + gamma * Xwet[i] 
+ }
+
+# Derived quantities
+# Recover the effects relative to baseline level (no. 1)
+ a.effe2 <- alpha[2] - alpha[1]		# Intercept Black Forest vs. Jura
+ a.effe3 <- alpha[3] - alpha[1]		# Intercept Alps vs. Jura
+ b.effe2 <- beta1[2] - beta1[1]		# Slope Black Forest vs. Jura
+ b.effe3 <- beta1[3] - beta1[1]		# Slope Alps vs. Jura
+
+}
+",fill=TRUE)
+sink()
+
+
+# Bundle data
+win.data <- list(C = C, N = N, pop = as.numeric(pop), n.groups = n.groups, wetness = wetness, n = n, 
+X = X, Xwet = Xwet)
+
+# Inits function
+inits <- function(){ list(alpha = rlnorm(n.groups, 3, 1), beta1 = rlnorm(n.groups, 2, 1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta1", "beta2", "gamma", "a.effe2", "a.effe3", "b.effe2", "b.effe3")
+
+# MCMC settings
+ni <- 5000
+nb <- 1000
+nt <- 4
+nc <- 3
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "glm.txt", n.thin = nt,
+n.chains = nc, n.burnin = nb, n.iter = ni, debug = FALSE)
+
+print(out, dig = 3)
+
+# Compare with MLE's
+fm <- glm(C/N ~ pop * wetness + X + Xwet, weights = N, family = binomial)
+summary(fm)
+
+We note slight differences that may be due to the effects of the priors on the Bayesian estimates or to
+small-sample bias in the MLE's.
+
+
+
+
+2. Fit a binomial ANCOVA to the occurrence of large counts (Swiss hares)
+   ---------------------------------------------------------------------
+
+Exercise:
+Fit a model with interacting effects of landuse and year (continuous). Also check for non-linear effects of year
+by fitting a quadratic year effect in addition to the linear one.
+
+Solution:
+We choose 5 as a threshold for a large count this time. 
+
+attach(hares)
+large <- as.numeric(count1 > 5)
+
+Here are the MLE's.
+yr <- as.numeric(scale(year))
+fm <- glm(large ~ landuse * yr - 1 - yr, family = binomial)
+summary(fm)
+
+
+Here is the Bayesian analysis using WinBUGS. Note that we use the numerical trick of 'stabilizing' the logit
+to avoid numerical over- or underflow. Absent that, WinBUGS will often crash. Also, flat normal priors did not
+lead to well-mixing chains, so I used uniform distributions instead.
+
+# Define model
+sink("glm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:2){		
+    alpha[i] ~ dunif(-5, 5)		# Intercepts for landuse
+    beta[i] ~ dunif(-5, 5)		# Annual trend estimate
+ }
+ 
+# Likelihood
+ for (i in 1:n) {
+    large[i] ~ dbern(plim[i])
+    logit(plim[i]) <- lplim[i]
+    lplim[i] <- min(999, max(-999, logitp[i]))
+    logitp[i] <- alpha[landuse[i]] + beta[landuse[i]]* yr[i] 
+ }
+}
+",fill=TRUE)
+sink()
+
+
+# Bundle data
+win.data <- list(large = large, landuse = as.numeric(landuse), yr = yr, n = length(count1))
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(2), beta = rnorm(2))}
+
+# Parameters to estimate
+params <- c("alpha", "beta")
+
+# MCMC settings
+ni <- 5000
+nb <- 1000
+nt <- 4
+nc <- 3
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "glm.txt", n.thin = nt,
+n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE)
+
+print(out, dig = 5)
+summary(fm)
+
+We see the usual numerical similarity of Bayesian estimates and those obtained by the method of maximum 
+likelihood.
+
+
+We next check for non-linear annual trends in the occurrence of large counts. To do this, we simply add a 
+quadratic effect of year.
+
+Here are the MLE's.
+yr <- as.numeric(scale(year))
+yr2 <- yr^2
+fm <- glm(large ~ landuse * (yr + yr2) - 1 - yr -yr2, family = binomial)
+summary(fm)
+
+
+Here is the Bayesian analysis. The vague, flat normal priors did not lead to very good mixing of the Markov 
+chains, so as an alternative I tried uniform priors, and they worked better.
+
+# Define model
+sink("glm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:2){		
+#    alpha[i] ~ dnorm(0, 0.001)		# Intercepts for landuse
+#    beta1[i] ~ dnorm(0, 0.001)		# Annual trend estimate (linear)
+#    beta2[i] ~ dnorm(0, 0.001)		# Annual trend estimate (quadratic)
+
+    alpha[i] ~ dunif(-5, 5)		# Intercepts for landuse
+    beta1[i] ~ dunif(-1, 1)		# Annual trend estimate (linear)
+    beta2[i] ~ dunif(-1, 1)		# Annual trend estimate (quadratic)
+
+ }
+ 
+# Likelihood
+ for (i in 1:n) {
+    large[i] ~ dbern(plim[i])
+    logit(plim[i]) <- lplim[i]
+    lplim[i] <- min(999, max(-999, logitp[i]))
+    logitp[i] <- alpha[landuse[i]] + beta1[landuse[i]]* yr[i] + beta2[landuse[i]]* yr2[i] 
+ }
+}
+",fill=TRUE)
+sink()
+
+
+# Bundle data
+win.data <- list(large = large, landuse = as.numeric(landuse), yr = yr, yr2 = yr2, n = length(count1))
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(2), beta1 = rnorm(2))}
+
+# Parameters to estimate
+params <- c("alpha", "beta1", "beta2")
+
+# MCMC settings
+ni <- 5000
+nb <- 1000
+nt <- 4
+nc <- 3
+
+# Start Gibbs sampler
+out <- bugs(data = win.data, inits = inits, parameters.to.save = params, model.file = "glm.txt", n.thin = nt,
+n.chains = nc, n.burnin = nb, n.iter = ni, debug = TRUE)
+
+print(out, dig = 5)
+summary(fm)
+
+Now the similarity between Bayesian and ML estimates is somewhat more moderate, although the uncertainty intervals
+overlap easily. In any case, there is no evidence for a quadratic effect of year.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 19: Binomial GLMM                            #
+#                                                             #
+###############################################################
+
+
+
+
+0. Extra exercise: do a series of GLM 'conversions'
+   ------------------------------------------------
+
+Exercise:
+(a) Take the binomial GLMM and turn in back into a binomial GLM. Then turn that back into (b) a Poisson GLM 
+and finally (c) into a normal GLM. 
+
+(a) illustrates the difference between a random-effects model and a fixed-effects model.
+(b) illustrates the differences between a binomial and a Poisson GLM
+(c) illustrates the difference between a (Poisson) GLM and a simple normal linear model
+
+You'll have to (re-) create the data set from chapter 19 first.
+
+Solutions:
+
+(a) Conversion Binomial GLMM into a binomial GLM
+------------------------------------------------
+
+
+Binomial GLMM (from the book chapter)
+-------------------------------------
+
+# Define model
+sink("bin_glmm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(mu.int, tau.int)	# Intercepts
+    beta[i] ~ dnorm(mu.beta, tau.beta)	# Slopes
+}
+ mu.int ~ dnorm(0, 0.001)	# Hyperparameter for random intercepts
+ tau.int <- 1 / (sigma.int * sigma.int)
+ sigma.int ~ dunif(0, 10)
+
+ mu.beta ~ dnorm(0, 0.001)	# Hyperparameter for random slopes
+ tau.beta <- 1 / (sigma.beta * sigma.beta)
+ sigma.beta ~ dunif(0, 10)
+
+# Binomial likelihood
+ for (i in 1:n) {
+    C[i] ~ dbin(p[i], N[i])
+    logit(p[i]) <- alpha[pop[i]] + beta[pop[i]]* prec[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, N = N, pop = as.numeric(pop), prec = prec, n.groups = n.groups, n = n)
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(n.groups, 1, 1), 
+mu.int = rnorm(1, 0, 1), mu.beta = rnorm(1, 0, 1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "mu.int", "sigma.int", "mu.beta", "sigma.beta")
+
+# MCMC settings
+ni <- 2000
+nb <- 500
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out.bin.glmm <- bugs(win.data, inits, params, "bin_glmm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = TRUE)
+print(out.bin.glmm, dig = 2)
+
+
+
+Binomial GLM
+------------
+
+# Define model
+sink("bin_glm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(0, 0.0001)	# Intercepts
+    beta[i] ~ dnorm(0, 0.0001)	# Slopes
+}
+
+# Binomial likelihood
+ for (i in 1:n) {
+    C[i] ~ dbin(p[i], N[i])
+    logit(p[i]) <- alpha[pop[i]] + beta[pop[i]]* prec[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, N = N, pop = as.numeric(pop), prec = prec, n.groups = n.groups, n = n)
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(n.groups, 1, 1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta")
+
+# Start Gibbs sampling
+out.bin.glm <- bugs(win.data, inits, params, "bin_glm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, 
+n.iter=ni, debug = TRUE)
+
+print(out.bin.glm, dig = 2)
+
+
+
+
+(b) Conversion Binomial GLM into a Poisson GLM
+------------------------------------------------
+
+# Define model
+sink("Poisson_glm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(0, 0.0001)	# Intercepts
+    beta[i] ~ dnorm(0, 0.0001)	# Slopes
+}
+
+# Poisson likelihood
+ for (i in 1:n) {
+    C[i] ~ dpois(lambda[i])
+    log(lambda[i]) <- alpha[pop[i]] + beta[pop[i]]* prec[i]
+#    lambda[i] <- exp(alpha[pop[i]] + beta[pop[i]]* prec[i])
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, pop = as.numeric(pop), prec = prec, n.groups = n.groups, n = n)
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(n.groups, 1, 1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "lambda")
+
+# Start Gibbs sampling
+out.Poisson.glm <- bugs(win.data, inits, params, "Poisson_glm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+print(out.Poisson.glm, dig = 2)
+
+
+
+
+(c) Conversion Poisson GLM into a normal GLM (= LM)
+---------------------------------------------------
+
+# Define model
+sink("lm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(0, 0.0001)	# Intercepts
+    beta[i] ~ dnorm(0, 0.0001)	# Slopes
+}
+
+tau <- 1/(sigma*sigma)
+sigma ~ dunif(0, 100)
+
+# Normal likelihood
+ for (i in 1:n) {
+    C[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta[pop[i]]* prec[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, pop = as.numeric(pop), prec = prec, n.groups = n.groups, n = n)
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(n.groups, 1, 1), sigma = rlnorm(1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "sigma")
+
+# Start Gibbs sampling
+out.lm <- bugs(win.data, inits, params, "lm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+print(out.lm, dig = 2)
+
+
+
+
+1. Get predictions of expected breeding success
+   --------------------------------------------
+
+Exercise:
+For thw woodchat shrike example, form predictions of the expected breeding success and overlay this on a 
+plot of the observed breeding success.
+
+Solution:
+Though this may be possible using lattice graphics, we try a simpler solution 'by hand' instead. We redraw
+a grid of plots, one for each population. Since a 4 by 4 panel plot may appear too crammed, we can choose
+other configurations by the par() command, for instance by selecting mfrow = c(2,2), we produce four 2 by 2 panel plots.
+
+par(mfrow = c(4,4), mar = c(4, 4, 1, 2) + 0.1)
+for(i in 1:16){
+   print(i)
+   realised.breeding.success <- C[((i-1)*10+1):(i*10)] / N[((i-1)*10+1):(i*10)] 
+   precipitation <- prec[((i-1)*10+1):(i*10)]
+   plot(precipitation, realised.breeding.success, ylim = c(0,1), xlim = c(0,1), las = 1,
+   ylab = "Prop. successful", xlab = "Precipitation", cex = 1.5, col = "blue")
+   browser()
+}
+
+
+All we have to do in WinBUGS to obtain estimates of the expected breeding success is to monitor p !
+
+# Define model
+sink("glmm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(mu.int, tau.int)	# Intercepts
+    beta[i] ~ dnorm(mu.beta, tau.beta)	# Slopes
+}
+ mu.int ~ dnorm(0, 0.001)	# Hyperparameter for random intercepts
+ tau.int <- 1 / (sigma.int * sigma.int)
+ sigma.int ~ dunif(0, 10)
+
+ mu.beta ~ dnorm(0, 0.001)	# Hyperparameter for random slopes
+ tau.beta <- 1 / (sigma.beta * sigma.beta)
+ sigma.beta ~ dunif(0, 10)
+
+# Binomial likelihood
+ for (i in 1:n) {
+    C[i] ~ dbin(p[i], N[i])
+    logit(p[i]) <- alpha[pop[i]] + beta[pop[i]]* prec[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, N = N, pop = as.numeric(pop), prec = prec, n.groups = n.groups, n = n)
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), beta = rnorm(n.groups, 1, 1), mu.int = rnorm(1, 0, 1), mu.beta = rnorm(1, 0, 1))}
+
+# Parameters to estimate
+params <- c("alpha", "beta", "mu.int", "sigma.int", "mu.beta", "sigma.beta", "p")
+
+# MCMC settings
+ni <- 2000
+nb <- 500
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out <- bugs(win.data, inits, params, "glmm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+print(out, dig = 3)
+
+
+We now adapt the graphics code to also draw the lines representing the expected breeding success. As a 
+graphical trick we will order all three vectors in this graph by ascending values of precipitation.
+
+par(mfrow = c(4,4), mar = c(4, 4, 1, 2) + 0.1)
+for(i in 1:16){
+   print(i)
+   
+   # Get values for each population
+   precipitation <- prec[((i-1)*10+1):(i*10)]
+   realised.breeding.success <- C[((i-1)*10+1):(i*10)] / N[((i-1)*10+1):(i*10)] 
+   expected.breeding.success <- out$mean$p[((i-1)*10+1):(i*10)]
+   
+   # Determine order of prec
+   ooo <- order(precipitation)
+   
+   # Plot stuff
+   plot(precipitation[ooo], realised.breeding.success[ooo], ylim = c(0,1), xlim = c(0,1), las = 1,
+   ylab = "Prop. successful", xlab = "Precipitation", cex = 1.5, col = "blue")
+   lines(precipitation[ooo], expected.breeding.success[ooo], col = "red", lwd = 3)
+   browser()
+}
+
+
+
+
+2. Fixed and random (shrinkage)
+   ----------------------------
+
+Exercise:
+Refit the model by dropping the distributional assumptions about the intercepts and slopes of the relationship
+between breeding success and precipitation, i.e., fit the fixed-effects counterpart of the model in this
+chapter, and compare the estimates.
+
+Solution:
+We first save the output of the GLMM under a different name. 
+
+out.glmm <- out
+
+Then we refit the fixed-effects counterpart of the model.
+
+# Define model
+sink("glm.txt")
+cat("
+model {
+
+# Priors
+ for (i in 1:n.groups){		
+    alpha[i] ~ dnorm(0, 0.001)	# Intercepts
+    beta[i] ~ dnorm(0, 0.001)	# Slopes
+}
+
+# Binomial likelihood
+ for (i in 1:n) {
+    C[i] ~ dbin(p[i], N[i])
+    logit(p[i]) <- alpha[pop[i]] + beta[pop[i]]* prec[i]
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(C = C, N = N, pop = as.numeric(pop), prec = prec, n.groups = n.groups, n = n)
+
+# Inits function
+inits <- function(){ list(alpha = rnorm(n.groups), beta = rnorm(n.groups))}
+
+# Parameters to estimate
+params <- c("alpha", "beta")
+
+# MCMC settings
+ni <- 2000
+nb <- 500
+nt <- 2
+nc <- 3
+
+# Start Gibbs sampling
+out.glm <- bugs(win.data, inits, params, "glm.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni, debug = TRUE)
+print(out.glm, dig = 3)
+
+Now we plot both sets of estimates in the same graph and inspect them first in a table.
+alpha.fix <- out.glm$mean$alpha
+beta.fix <- out.glm$mean$beta
+alpha.random <- out.glmm$mean$alpha
+beta.random <- out.glmm$mean$beta
+
+cbind(alpha.fix, alpha.random, beta.fix, beta.random)
+
+plot(alpha.fix)
+points(alpha.random)
+
+par(mfrow = c(2,1), mar = c(4, 4, 1, 2) + 0.1)
+plot(alpha.fix, ylim = c(-3,3), las = 1, ylab = "Intercept estimates", xlab = "Population", cex = 1.5, 
+col = "blue") 
+abline(h = mean(alpha.fix), col = "blue", lwd = 2)
+points(alpha.random, col = "red", lwd = 2, cex = 1.5)
+segments(1:16, alpha.fix, 1:16, alpha.random, lwd = 2, col = "green")
+
+plot(beta.fix, ylim = c(-5,1), las = 1, ylab = "Slope estimates", xlab = "Population", cex = 1.5, 
+col = "blue") 
+abline(h = mean(beta.fix), col = "blue", lwd = 2)
+points(beta.random, col = "red", lwd = 2, cex = 1.5)
+segments(1:16, beta.fix, 1:16, beta.random, lwd = 2, col = "green")
+
+We clearly see that, on average, under the random-effects model, more extreme group means (population means),
+or those estimated with less precision, are pulled in more towards the overall mean. Here, the blue line 
+shows the mean of the fixed-effects estimates.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 20: Site-occ model                           #
+#                                                             #
+###############################################################
+
+
+
+
+1. Prior sensitivity
+   -----------------
+
+Exercise:
+Compare the uniform and the normal priors in terms of the posterior means of the primary model params.
+
+Solution: 
+As usual, I assume that the data generated float around in your R workspace. We then fit the model using 
+first the uniform(-10, 10) and then the flat normal priors.
+
+# Define model
+sink("model1.txt")
+cat("
+model {
+
+# Priors
+ alpha.occ ~ dunif(-10, 10)	# Set A of priors
+ beta.occ ~ dunif(-10, 10)
+ alpha.p ~ dunif(-10, 10)
+ beta.p ~ dunif(-10, 10)
+
+# Likelihood
+ for (i in 1:R) { #start initial loop over the R sites
+ # True state model for the partially observed true state
+    z[i] ~ dbern(psi[i])		# True occupancy z at site i
+    logit(psi[i]) <- alpha.occ + beta.occ * humidity[i]
+
+    for (j in 1:T) { # start a second loop over the T replicates
+       # Observation model for the actual observations
+       y[i,j] ~ dbern(eff.p[i,j])	# Detection-nondetection at i and j
+       eff.p[i,j] <- z[i] * p[i,j]
+       logit(p[i,j]) <- alpha.p + beta.p * humidity[i]
+    }
+ }
+# Derived quantities
+ occ.fs <- sum(z[])
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(y = y, humidity = humidity, R = dim(y)[1], T = dim(y)[2])
+
+# Inits function
+zst <- apply(y, 1, max)		#Good starting values for latent states essential !
+inits <- function(){list(z = zst, alpha.occ=runif(1, -5, 5), beta.occ = runif(1, -5, 5), 
+alpha.p = runif(1, -5, 5), beta.p = runif(1, -5, 5))}
+
+# Parameters to estimate
+params <- c("alpha.occ","beta.occ", "alpha.p", "beta.p", "occ.fs")
+
+# MCMC settings
+nc <- 3
+nb <- 2000
+ni <- 12000
+nt <- 5
+
+# Start Gibbs sampler
+out1 <- bugs(win.data, inits, params, "model1.txt", n.chains=nc, n.iter=ni, n.burn = nb, 
+n.thin=nt, debug = TRUE)
+print(out1, dig = 3)
+
+
+Next, we fit the model using the flat normal priors. (If you get the dreaded Trap 66 (postcondition violation),
+try to stabilize the logit; see book appendix. Or just set off the Markov chains another time and hope that
+it does not occur.)
+
+# Define model
+sink("model2.txt")
+cat("
+model {
+
+# Priors
+ alpha.occ ~ dnorm(0, 0.01) # Set B of priors
+ beta.occ ~ dnorm(0, 0.01)
+ alpha.p ~ dnorm(0, 0.01)
+ beta.p ~ dnorm(0, 0.01)
+
+# Likelihood
+ for (i in 1:R) { #start initial loop over the R sites
+ # True state model for the partially observed true state
+    z[i] ~ dbern(psi[i])		# True occupancy z at site i
+    logit(psi[i]) <- alpha.occ + beta.occ * humidity[i]
+
+    for (j in 1:T) { # start a second loop over the T replicates
+       # Observation model for the actual observations
+       y[i,j] ~ dbern(eff.p[i,j])	# Detection-nondetection at i and j
+       eff.p[i,j] <- z[i] * p[i,j]
+       logit(p[i,j]) <- alpha.p + beta.p * humidity[i]
+    }
+ }
+# Derived quantities
+ occ.fs <- sum(z[])
+}
+",fill=TRUE)
+sink()
+
+# Start Gibbs sampler
+out2 <- bugs(win.data, inits, params, "model2.txt", n.chains=nc, n.iter=ni, n.burn = nb, 
+n.thin=nt, debug = TRUE)
+
+Now we compare the estimates under both prior specifications.
+print(out1, dig = 3)
+print(out2, dig = 3)
+
+We conclude that there is hardly any sensitvitiy to these choices of priors.
+
+
+And finally, we check whether the uniform(-10, 10) priors did not 'squeeze in' the marginal posterior distributions
+of the primary parameters by plotting them
+
+par(mfrow = c(2,2))
+hist(out1$sims.list$alpha.occ, breaks = 50, col = "grey", main = "alpha.occ", xlab = "", ylab = "",
+xlim = c(-10, 10))
+abline(v = c(-10, 10), col = "red")
+hist(out1$sims.list$beta.occ, breaks = 50, col = "grey", main = "beta.occ", xlab = "", ylab = "",
+xlim = c(-10, 10))
+abline(v = c(-10, 10), col = "red")
+hist(out1$sims.list$alpha.p, breaks = 50, col = "grey", main = "alpha.p", xlab = "", ylab = "",
+xlim = c(-10, 10))
+abline(v = c(-10, 10), col = "red")
+hist(out1$sims.list$beta.p, breaks = 50, col = "grey", main = "beta.p", xlab = "", ylab = "",
+xlim = c(-10, 10))
+abline(v = c(-10, 10), col = "red")
+
+>From looking at the range over which each marginal posterior distribution has support, it appears obvious 
+that the chosen bounds of the uniform priors for the primary model parameters were sufficiently wide so
+as to be uninformative.
+
+
+
+
+2. Site and survey covariates
+   --------------------------
+
+Exercise:
+Usually, in the analysis of a site-occ model, you will have covariates that vary by site only (site covariates),
+but also covariates that vary by site and individual survey (here called survey covariates). You must
+know then how to specify the analysis.
+
+As an extra, we see what happens when there are missing values in the covariates (i.e., when the design 
+is not balanced, that is, when not all sites were surveyed an equal number of times)
+
+Solution:
+Survey covariates have the same dimension as the response array, i.e., the matrix containing the 
+detection-nondetection data y. 
+
+We generate a survey covariate and fill it with random numbers. Then, we randomly turn 50 values into NA's.
+
+X <- matrix(round(runif(450), dig = 2), ncol = 3)
+NA.data <- sort(sample((1:450), size = 50))
+X[NA.data] <- NA
+
+
+# Define model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ alpha.occ ~ dunif(-10, 10)	# Set A of priors
+ beta.occ ~ dunif(-10, 10)
+ alpha.p ~ dunif(-10, 10)
+ beta.p ~ dunif(-10, 10)
+ beta.X ~ dunif(-10, 10)
+
+# Likelihood
+ for (i in 1:R) {
+ # True state model for the partially observed true state
+    z[i] ~ dbern(psi[i])		# True occupancy z at site i
+    logit(psi[i]) <- alpha.occ + beta.occ * humidity[i]
+
+    for (j in 1:T) {
+       # Observation model for the actual observations
+       y[i,j] ~ dbern(eff.p[i,j])	# Detection-nondetection at i and j
+       eff.p[i,j] <- z[i] * p[i,j]
+       logit(p[i,j]) <- alpha.p + beta.p * humidity[i] + beta.X * X[i,j]
+    }
+ }
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(y = y, humidity = humidity, R = dim(y)[1], T = dim(y)[2], X = X)
+
+# Inits function
+zst <- apply(y, 1, max)
+inits <- function(){list(z = zst, alpha.occ=runif(1, -5, 5), beta.occ = runif(1, -5, 5), 
+alpha.p = runif(1, -5, 5), beta.p = runif(1, -5, 5))}
+
+# Parameters to estimate
+params <- c("alpha.occ","beta.occ", "alpha.p", "beta.p", "beta.X")
+
+# MCMC settings
+nc <- 3
+nb <- 200
+ni <- 1200
+nt <- 5
+
+# Start Gibbs sampler
+out <- bugs(win.data, inits, params, "model.txt", n.chains=nc, n.iter=ni, n.burn = nb, n.thin=nt, 
+debug = TRUE)
+
+Executing this code, WinBUGS will crash saying 'made use of undefined node X'. The reason for this is that
+we have missing values in an explanatory variable, and they need to be dealt with by either specifying a model
+for them (e.g., defining a prior for X in our case) or by eliminating them before we start the analysis. 
+The simplest way to get rid of the missing covariate values is by 'mean-imputing' them, i.e., by replacing
+them with the mean of the observed covariates. Unless the number of missing values is excessively great,
+this should not affect the results too much.
+
+So here we first mean-impute the missing X's.
+
+X[is.na(X)] <- mean(X, na.rm = TRUE)
+
+Then, we repeat the analysis. We need not execute all of the above R code:
+
+# Bundle data
+win.data <- list(y = y, humidity = humidity, R = dim(y)[1], T = dim(y)[2], X = X)
+
+# Start Gibbs sampler
+out <- bugs(win.data, inits, params, "model.txt", n.chains=nc, n.iter=ni, n.burn = nb, n.thin=nt, 
+debug = TRUE)
+print(out, dig = 3)
+
+
+Note that when we have missing values in the response, i.e., the array containing the detection-nondetection 
+data, then that's no problem at all.
+
+
+
+
+3. Occurrence of 'large populations' (Swiss hare data)
+   ---------------------------------------------------
+
+Exercise:
+Collapse the hare counts of one particular year (e.g., 2000) to binary data where a 1 indicates the 
+observation of a 'large population' (say, a count greater or equal 10). Estimate the proportion of sites 
+inhabited by a 'large population', i.e., one that is capable of producing a count greater or equal 10. Also
+fit a site covariate into the occupancy parameter (psi).
+
+Solution:
+We extract the count and elevation data from 2000 and then turn the counts into an indicator variable for
+counts greater than 9.
+
+attach(hares)
+counts2000 <- cbind(count1[year == 2000], count2[year == 2000])
+counts2000[counts2000 < 10] <- 0
+counts2000[counts2000 > 9] <- 1
+y <- counts2000
+
+We directly fit a site-occupancy model with elevation as a covariate on the probability to be a 
+'large population'. For this, we also extract the elevation data.
+
+ELEV <- elevation[year == 2000]
+
+We also must mean-impute some missing elevations and then standardise the covariate.
+ELEV <- as.numeric(scale(ELEV))
+ELEV[is.na(ELEV)] <- 0
+
+
+# Define model
+sink("model.txt")
+cat("
+model {
+
+# Priors
+ alpha.occ ~ dunif(-10, 10)
+ beta.occ ~ dunif(-10, 10)
+ p ~ dunif(0, 1)
+
+# Likelihood
+ for (i in 1:R) { #start initial loop over the R sites
+ # True state model for the partially observed true state
+    z[i] ~ dbern(psi[i])		# True occupancy z at site i
+    logit(psi[i]) <- alpha.occ + beta.occ * ELEV[i]
+
+    for (j in 1:T) { # start a second loop over the T replicates
+       # Observation model for the actual observations
+       y[i,j] ~ dbern(eff.p[i,j])	# Detection-nondetection at i and j
+       eff.p[i,j] <- z[i] * p
+    }
+ }
+# Derived quantities
+ occ.fs <- sum(z[])	# Number of 'large populations' among 56
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(y = y, ELEV = ELEV, R = dim(y)[1], T = dim(y)[2])
+
+# Inits function
+zst <- apply(y, 1, max)		#Good starting values for latent states essential !
+zst[is.na(zst)] <- 1
+inits <- function(){list(z = zst, alpha.occ=runif(1, -5, 5), beta.occ = runif(1, -5, 5))}
+
+# Parameters to estimate
+params <- c("alpha.occ","beta.occ", "p", "occ.fs")
+
+# MCMC settings
+nc <- 3
+nb <- 2000
+ni <- 12000
+nt <- 5
+
+# Start Gibbs sampler
+out <- bugs(win.data, inits, params, "model.txt", n.chains=nc, n.iter=ni, n.burn = nb, n.thin=nt, debug = TRUE)
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "model.txt", fit using WinBUGS,
+ 3 chains, each with 12000 iterations (first 2000 discarded), n.thin = 5
+ n.sims = 6000 iterations saved
+            mean    sd   2.5%    25%    50%    75%  97.5%  Rhat n.eff
+alpha.occ  1.213 0.390  0.523  0.953  1.188  1.442  2.019 1.001  4000
+beta.occ   0.024 0.438 -0.735 -0.265 -0.005  0.274  0.987 1.002  1400
+p          0.901 0.044  0.798  0.875  0.907  0.933  0.967 1.001  5200
+occ.fs    42.388 1.806 39.000 41.000 42.000 43.000 46.000 1.001  6000
+deviance  38.073 8.834 29.670 30.500 35.380 42.232 60.800 1.002  1700
+
+For each parameter, n.eff is a crude measure of effective sample size,
+and Rhat is the potential scale reduction factor (at convergence, Rhat=1).
+
+DIC info (using the rule, pD = var(deviance)/2)
+pD = 39.0 and DIC = 77.1
+DIC is an estimate of expected predictive error (lower deviance is better).
+
+Hence, we estimate that about 42 sites are occupied by populations that can produce counts greater than 9.
+The detection probability is estimated at about 90%. This means that a 'large population' will produce counts
+of 9 and less about 10% of the time. There does not seem to be a relationship between 'large populations' 
+(as defined here) and the elevation of a site.
+
+
+
+
+4. Simulation study
+   ----------------
+
+This is a bigger project that may well be part of a thesis.
+
+
+
+
+
+
+
+
+###############################################################
+#                                                             #
+#        Chapter 21: N-mix model                              #
+#                                                             #
+###############################################################
+
+
+
+
+1. Survey covariates
+   -----------------
+
+Exercise:
+Generate a variation of the lizard data, wherein you build in a negative effect of the temperature during a 
+survey on the detection probability of an individual lizard. Then analyse these data using an N-mix model.
+We assume that surveys are conducted only during favourable temperatures (e.g., between 15 and 25 degrees)
+and that lizards expose themselves more during colder weather. During surveys on hot days, they simply
+stay concealed in the vegetation.
+
+Solution: 
+We will analyse the data in the horizontal format, i.e., retain the matrix format of the data.
+
+R <- 200		# Number of surveyed sites
+T <- 3			# Number of replicate counts at each site
+
+vege <- sort(runif(n = R, min = -1.5, max =1.5))
+alpha.lam <- 2		# Intercept
+beta1.lam <- 2		# Linear effect of vegetation
+beta2.lam <- -2		# Quadratic effect of vegetation
+lam <- exp(alpha.lam + beta1.lam * vege + beta2.lam * (vege^2))
+N <- rpois(n = R, lambda = lam)
+table(N)		# Distribution of abundances across sites
+sum(N > 0) / n.site	# Empirical occupancy
+
+alpha.p <- 1		# Intercept
+beta1.p <- -4		# Linear effect of vegetation
+beta2.p <- -2		# Linear effect of temperature
+
+y <- p <- array(NA, dim=(c(R, T)))			# Create arrays for y and p
+temp <- array(runif(R*T, 15, 25), dim = c(R, T))	# Generate the temperature survey covariate
+mean.temp <- mean(temp)					# Then we standardise the covariate
+sd.temp <- sd(temp)
+TEMP <- (temp - mean.temp) / sd.temp
+
+for(j in 1:T){
+     p[,j] <- plogis(alpha.p + beta1.p * vege + beta2.p * TEMP[,j]) 
+     y[,j] <- rbinom(n = R, size = N, prob = p[,j])
+}
+y
+
+sum(apply(y, 1, sum) > 0)	# Apparent distribution (proportion occupied sites)
+sum(N > 0)			# True occupancy
+
+
+Now the analysis using WinBUGS, and without stacking the data on top of each other. That is, we analyse the model
+in the same array format that we saw in the site-occ examples.
+
+
+# Define model
+sink("Nmix.txt")
+cat("
+model {
+
+# Priors
+ alpha.lam ~ dunif(-10, 10)
+ beta1.lam ~ dunif(-10, 10)
+ beta2.lam ~ dunif(-10, 10)
+ alpha.p ~ dunif(-10, 10)
+ beta1.p ~ dunif(-10, 10)
+ beta2.p ~ dunif(-10, 10)
+
+# Likelihood
+# Biological model for true abundance
+ for (i in 1:R) {			# Loop over R sites
+   N[i] ~ dpois(lambda[i])
+   log(lambda[i]) <- alpha.lam + beta1.lam * vege[i] + beta2.lam * vege2[i]
+
+ # Observation model for replicated counts
+    for (j in 1:T) {			# Loop over all n observations
+      y[i,j] ~ dbin(p[i,j], N[i])
+      logit(p[i,j]) <- alpha.p + beta1.p * vege[i] + beta2.p * TEMP[i,j]
+    }
+ }
+
+# Derived quantities
+ totalN <- sum(N[])	# Estimate total population size across all sites
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+vege2 = (vege * vege)
+win.data <- list(R = R, T = T, y = y, vege = vege, vege2 = vege2, TEMP = TEMP)
+
+# Inits function
+Nst <- apply(y, 1, max) + 1
+inits <- function(){list(N = Nst, alpha.lam=rnorm(1, 0, 1), beta1.lam=rnorm(1, 0, 1), 
+beta2.lam=rnorm(1, 0, 1), alpha.p=rnorm(1, 0, 1), beta1.p=rnorm(1, 0, 1), beta2.p=rnorm(1, 0, 1))}
+
+# Parameters to estimate
+params <- c("N", "totalN", "alpha.lam", "beta1.lam", "beta2.lam", "alpha.p", "beta1.p", "beta2.p")
+
+# MCMC settings
+nc <- 3
+ni <- 1200
+nb <- 200
+nt <- 5
+
+# Start Gibbs sampler
+out <- bugs(win.data, inits, params, "Nmix.txt", n.chains=nc, n.iter=ni, n.burn = nb, 
+n.thin=nt, debug = TRUE)
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "Nmix.txt", fit using WinBUGS,
+ 3 chains, each with 1200 iterations (first 200 discarded), n.thin = 5
+ n.sims = 600 iterations saved
+             mean     sd    2.5%     25%     50%     75%    97.5%  Rhat n.eff
+N[1]        0.000  0.000   0.000   0.000   0.000   0.000    0.000 1.000     1
+N[2]        0.000  0.000   0.000   0.000   0.000   0.000    0.000 1.000     1
+N[3]        0.000  0.000   0.000   0.000   0.000   0.000    0.000 1.000     1
+N[4]        0.000  0.000   0.000   0.000   0.000   0.000    0.000 1.000     1
+N[5]        0.000  0.000   0.000   0.000   0.000   0.000    0.000 1.000     1
+ [  ...  ]
+N[199]      2.160  1.737   0.000   1.000   2.000   3.000    6.000 1.004   600
+N[200]      2.108  1.816   0.000   1.000   2.000   3.000    7.000 1.002   530
+totalN    894.682 89.817 769.000 829.000 877.000 939.250 1120.050 1.015   120
+alpha.lam   1.948  0.058   1.828   1.908   1.951   1.987    2.053 1.004   510
+beta1.lam   1.931  0.140   1.654   1.836   1.941   2.027    2.185 1.001   600
+beta2.lam  -1.871  0.197  -2.240  -2.008  -1.882  -1.733   -1.501 1.020   170
+alpha.p     0.961  0.128   0.724   0.876   0.961   1.053    1.209 1.007   250
+beta1.p    -4.016  0.281  -4.596  -4.207  -4.011  -3.829   -3.479 0.999   600
+beta2.p    -2.112  0.131  -2.368  -2.190  -2.111  -2.019   -1.855 1.020    96
+deviance  659.568 15.873 630.092 647.875 659.250 671.100  691.112 1.011   200
+
+
+We compare that with the values we used to fake our data:
+alpha.lam  ;  beta1.lam  ;  beta2.lam  ;   alpha.p  ;  beta1.p   ;   beta2.p
+> alpha.lam  ;  beta1.lam  ;  beta2.lam  ;   alpha.p  ;  beta1.p   ;   beta2.p
+[1] 2
+[1] 2
+[1] -2
+[1] 1
+[1] -4
+[1] -2
+
+And we are quite happy with these estimates -- and with this great model in general; thanks, Andy ;)
+
+
+
+
+2. Prior sensitivity
+   -----------------
+
+Exercise:
+Play around with different priors and see whether and how this affects the estimates. This is not shown.
+
+
+
+
+3. Hare abundance in 56 Swiss study sites in 2000
+   ----------------------------------------------
+
+Exercise:
+Fit the binomial mixture model to the hare data from a single year (e.g., 2000) and see whether there is a 
+difference in the probability of detection in grassland and arable areas. By what proportion will mean or 
+max counts underestimate true population size ?
+
+We do three things in addition to what is asked for in the book:
+1. We also fit an offset to account for variable size of the study sites. 
+2. Since we strongly suspect density to be different in grassland and arable sites, we also fit that effect
+into the abundance part of the model.
+3. We compute a derived quantity that tests whether p is different in arable and grassland sites.
+
+This example will then illustrate nicely one of the great advantages of the N-mix model: namely, that the
+effects of a single covariate on both abundance and on detection can be teased apart.
+
+
+
+Solution:
+attach(hares)
+y <- cbind(count1[year == 2000], count2[year == 2000])	# These are the counts
+LU <- as.numeric(landuse[year == 2000])
+A <- as.numeric(area[year == 2000])
+
+
+# Define model
+sink("Nmix.txt")
+cat("
+model {
+
+# Priors
+ for(j in 1:2){
+
+    alpha.lam[j] ~ dunif(-10, 10)
+    alpha.p[j] ~ dunif(-10, 10)
+ }
+ 
+# Likelihood
+# Biological model for true abundance
+ for (i in 1:R) {			# Loop over R sites
+   N[i] ~ dpois(lambda[i])
+   log(lambda[i]) <- log(A[i]) + alpha.lam[LU[i]]
+
+ # Observation model for replicated counts
+    for (j in 1:T) {			# Loop over all n observations
+      y[i,j] ~ dbin(p[i,j], N[i])
+      logit(p[i,j]) <- alpha.p[LU[i]]
+    }
+ }
+
+# Derived quantities
+ totalN <- sum(N[])	# Estimate total population size across all sites
+ for(j in 1:2){
+    mean.density[j] <- exp(alpha.lam[j])
+    mean.p[j] <- exp(alpha.p[j])/(1+exp(alpha.p[j]))
+ }
+diff.p <- mean.p[1] - mean.p[2] 
+ 
+}
+",fill=TRUE)
+sink()
+
+# Bundle data
+win.data <- list(R = dim(y)[1], T = dim(y)[2], y = y, LU = LU, A = A)
+
+# Inits function
+Nst <- apply(y, 1, max, na.rm = TRUE)+1
+Nst[Nst == -Inf] <- 2
+inits <- function(){list(N = Nst, alpha.lam=rnorm(2, 0, 1), alpha.p=rnorm(2, 0, 1))}
+
+# Parameters to estimate
+params <- c("totalN", "alpha.lam", "alpha.p", "mean.density", "mean.p", "diff.p")
+
+# MCMC settings
+nc <- 3
+ni <- 12000
+nb <- 2000
+nt <- 10
+
+# Start Gibbs sampler
+out <- bugs(win.data, inits, params, "Nmix.txt", n.chains=nc, n.iter=ni, n.burn = nb, 
+n.thin=nt, debug = TRUE)
+print(out, dig = 3)
+> print(out, dig = 3)
+Inference for Bugs model at "Nmix.txt", fit using WinBUGS,
+ 3 chains, each with 12000 iterations (first 2000 discarded), n.thin = 10
+ n.sims = 3000 iterations saved
+                    mean      sd     2.5%      25%      50%      75%    97.5%  Rhat n.eff
+totalN          2351.642 147.300 2112.000 2247.000 2332.000 2444.000 2678.025 1.016   140
+alpha.lam[1]       2.070   0.076    1.933    2.016    2.064    2.121    2.227 1.017   150
+alpha.lam[2]       1.240   0.078    1.097    1.186    1.237    1.290    1.401 1.004  2700
+alpha.p[1]         0.651   0.207    0.249    0.505    0.655    0.786    1.054 1.011   260
+alpha.p[2]         1.378   0.277    0.813    1.198    1.386    1.573    1.906 1.008   910
+mean.density[1]    7.951   0.615    6.912    7.507    7.877    8.344    9.268 1.016   160
+mean.density[2]    3.466   0.273    2.997    3.273    3.445    3.634    4.058 1.004  3000
+mean.p[1]          0.656   0.046    0.562    0.624    0.658    0.687    0.742 1.014   160
+mean.p[2]          0.795   0.046    0.693    0.768    0.800    0.828    0.871 1.006   770
+diff.p            -0.139   0.065   -0.263   -0.182   -0.142   -0.098   -0.006 1.006   420
+deviance         596.245  29.338  542.497  575.700  594.300  615.400  657.410 1.008   250
+
+Hence, not only density but also the detection probability of individual hares differed by landuse type
+in 56 Swiss study sites with predominantly arable or grassland use. The detection probability in the latter
+in 2000 was estimated at about 80% while that in arable areas at about 66%. This difference was 'significant' 
+judged by the 95% credible interval for the difference, which does not cover 0.
+
+The total number of hares associated with all 56 study sites in 2000 over the 2-week survey period was 
+estimated at 2352 hares. Let's compare this with two naive estimators of population size, the sum 
+(over sites) of the mean or the max observed counts:
+
+mean.counts <- apply(y, 1, mean, na.rm = TRUE)
+mean.counts[mean.counts == 'NaN'] <- NA
+max.counts <- apply(y, 1, max, na.rm = TRUE)
+max.counts[max.counts == -Inf] <- NA
+
+sum.mean <- sum(mean.counts, na.rm = TRUE)
+sum.max <- sum(max.counts, na.rm = TRUE)
+
+We note that there were no counts available in 2000 for 7 of the 56 sites. The Nmix model can elegantly estimate
+abundance also for these sites, but the naive estimators will be biased. As a quick and dirty correction,
+we increase the two naive estimators of total abundance proportionally, i.e., by 7/56.
+
+sum.mean <- (1 + 7/56) * sum.mean
+sum.max <- (1 + 7/56) * sum.max
+sum.mean
+sum.max
+
+> sum.mean
+[1] 1549.125
+> sum.max
+[1] 1647
+
+sum.mean / out$mean$totalN
+sum.max / out$mean$totalN
+> sum.mean / out$mean$totalN
+[1] 0.6630308
+> sum.max / out$mean$totalN
+[1] 0.7049216
+
+
+Under the N-mix model, we estimate a total abundance of 2352 hares. Hence, the two naive estimators of abundance
+underestimate true abundance by about one third. (Interestingly, it does not make a big difference whether
+one takes the mean count or the max count ! )
+
+
+
+
+4. Simulation exercise
+   -------------------
+
+This is a bigger project that may well be part of a thesis.
