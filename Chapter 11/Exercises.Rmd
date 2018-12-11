@@ -42,24 +42,281 @@ jagsModel <- jags.model(file = here("models", "ancova.txt"),
                         data = data,
                         init = inits,
                         n.chains = 3, 
-                        n.adapt = 100)
+                        n.adapt = 500)
 
 Samples <- coda.samples(jagsModel, 
                         variable.names = params, 
                         n.iter = 1000)
 ```
 
+```{r}
+mcmc <- as.data.frame(do.call(rbind, Samples))
+colnames(mcmc) <- c("a.Pyrenees", "a.Massif", "a.Jura", "b.Pyrenees", "b.Massif", "b.Jura", "sigma")
+mcmc$diff.b.Mas.Jur <- mcmc$b.Massif - mcmc$b.Jura
+sum(mcmc$diff.b.Mas.Jur > 0) / length(mcmc$diff.b.Mas.Jur)
+```
+There is a 82% chance that the vipers in Massif Central are bigger than in Jura.
 
+```{r}
+ggplot(data = subset(p.data, variable == "diff.b.Mas.Jur"), aes(x = value)) + 
+  geom_histogram(aes(y = ..density..), colour = "black", fill = "white", binwidth = 1) +
+  geom_density(alpha = .2, fill = "#FF6666") +
+  geom_vline(xintercept = 0, size = 2, colour = "red")
+```
+The difference between Massif Central and Jura vipers
+```{r}
+ggplot(data = subset(p.data, variable == "b.Massif" | variable == "b.Jura"), aes(x = value, color = variable, fill = variable)) + 
+  geom_histogram(aes(y = ..density..), alpha = .5, binwidth = 1, position = "identity") +
+  geom_density(alpha = .2)
+  #geom_vline(xintercept = 0, size = 2, colour = "red")
+```
+Both distribution for slope of the Massif and Jura vipers plotted separately.
+
+
+## Exercise 2
 
 2. Related models: Adapt the code to fit two variations of the model:
 • Fit different intercepts but a common slope
 • Fit the same intercept and the same slope
+
+### Model with common slope
+
+```{r}
+model.common.slope <- "
+model {
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta * length[i]
+ }
+
+# Priors
+ for (i in 1:n.group){		
+    alpha[i] ~ dunif(-1000, 1000)		# Intercepts
+ }
+ beta ~ dunif(-1000, 1000)		# Slope
+ sigma ~ dunif(0, 100)			# Residual standard deviation
+ tau <- 1 / ( sigma * sigma)
+}
+"
+```
+
+```{r}
+data <- list("length" = as.numeric(length.scaled),
+             "mass" = as.numeric(mass),
+             "pop" = pop,
+             "n" = n,
+             "n.group" = n.groups)
+
+inits <- function(){ list(alpha = runif(3, -1000, 1000), 
+                          beta = runif(1, -1000, 1000),
+                          sigma = runif(1, 0, 100) )}
+
+params <- c("alpha", "beta", "sigma")
+
+jags.common.slope <- jags.model(file = textConnection(model.common.slope),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 500)
+
+common.slope <- coda.samples(jags.common.slope, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+### Model shared Intercept and Slope
+
+```{r}
+model.shared <- "
+model {
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha + beta * length[i]
+ }
+
+# Priors
+ alpha ~ dunif(-1000, 1000)		# Intercept
+ beta ~ dunif(-1000, 1000)		# Slope
+ sigma ~ dunif(0, 100)			# Residual standard deviation
+ tau <- 1 / ( sigma * sigma)
+}
+"
+```
+
+```{r}
+
+inits <- function(){ list(alpha = runif(1, -1000, 1000), 
+                          beta = runif(1, -1000, 1000),
+                          sigma = runif(1, 0, 100) )}
+
+jags.shared <- jags.model(file = textConnection(model.shared),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 500)
+
+shared.intercept <- coda.samples(jags.shared, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+```{r}
+c.slope <- as.data.frame(do.call(rbind, common.slope))
+means <- summarise_all(c.slope, funs(mean))
+
+shared <- as.data.frame(do.call(rbind, shared.intercept))
+shared.means <- summarise_all(shared, funs(mean))
+
+p.data <- data.frame(mass = mass,
+                     length = length.scaled,
+                     pop = pop)
+c.slope.lines <- data.frame(intercept = as.numeric(means[,1:3]),
+                            slope = rep(means[,4], 3),
+                            pop = levels(pop))
+
+ggplot(data = p.data) + 
+  geom_point(aes(y = mass, x = length, color = pop)) + 
+  geom_abline(data = c.slope.lines, aes(slope = slope, intercept = intercept, color = pop)) +
+  geom_abline(data = shared.means, aes(slope = beta, intercept = alpha))
+```
+All estimated lines are plotted. Black line is the shared slope and intercept.
+
+## Exercise 3
 
 3. Quadratic effects: Add a quadratic term to the mass – length relationship,
 i.e., fit the model pop + (length + length^2). You do not need to
 reassemble a dataset that contains an effect of length squared, but you can
 simply take the dataset we have already created in this chapter.
 
+```{r}
+model <- "
+model {
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta[pop[i]] * length[i] + gamma[pop[i]] * length[i] * length[i]
+ }
+
+# Priors
+ for (i in 1:n.group){		
+    alpha[i] ~ dunif(-1000, 1000)
+    beta[i] ~ dunif(-1000, 1000)
+    gamma[i] ~ dunif(-1000, 1000)
+ }
+ sigma ~ dunif(0, 100)			# Residual standard deviation
+ tau <- 1 / ( sigma * sigma)
+ }
+"
+```
+
+```{r}
+data <- list("length" = as.numeric(length.scaled),
+             "mass" = as.numeric(mass),
+             "pop" = pop,
+             "n" = n,
+             "n.group" = n.groups)
+
+inits <- function(){ list(alpha = runif(3, -1000, 1000), 
+                          beta = runif(3, -1000, 1000),
+                          gamma = runif(3, -1000, 1000),
+                          sigma = runif(1, 0, 100))}
+
+params <- c("alpha", "beta", "gamma", "sigma")
+
+jagsModel <- jags.model(file = textConnection(model),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 500)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+```{r}
+mcmc <- as.data.frame(do.call(rbind, Samples))
+means <- as.numeric(summarise_all(mcmc, funs(mean)))
+
+p.data <- data.frame(mass = mass,
+                     length = length.scaled,
+                     pop = pop)
+
+ggplot(data = p.data) + 
+  geom_point(aes(y = mass, x = length, color = pop)) +
+  stat_function(colour = "red", fun = function(x) means[1] + means[4] * x + means[7] * x^2) +
+  stat_function(colour = "green", fun = function(x) means[2] + means[5] * x + means[8] * x^2) +
+  stat_function(colour = "blue", fun = function(x) means[3] + means[6] * x + means[9] * x^2)
+```
+
 4. Swiss haredata: Fit an ANCOVA (pop * year, with year as a continuous
 explanatory variable) to the meandensity. Also compute residuals and plot
 them to check for outliers.
+
+```{r}
+hares <- read.table(file = here("data","hares.data.txt"), header = TRUE)
+
+hares. <- hares %>%
+  filter(!is.na(mean.density))
+hares.$scaled.year <- scale(hares.$year)
+```
+
+```{r}
+model <- "
+model {
+# Likelihood
+ for (i in 1:n) {
+    mean.density[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[site[i]] + beta[site[i]] * year[i]
+    residuals[i] <- mean.density[i] - mu[i]
+ }
+
+# Priors
+ for (i in 1:n.group){		
+    alpha[i] ~ dunif(-1000, 1000)
+    beta[i] ~ dunif(-1000, 1000)
+ }
+ sigma ~ dunif(0, 100)
+ tau <- 1 / ( sigma * sigma)
+ }
+"
+```
+
+```{r}
+data <- list("mean.density" = hares.$mean.density,
+             "year" = as.numeric(hares.$scaled.year),
+             "site" = hares.$site,
+             "n" = nrow(hares.),
+             "n.group" = length(levels(hares.$site)))
+
+inits <- function(){ list(alpha = runif(56, -1000, 1000), 
+                          beta = runif(56, -1000, 1000),
+                          sigma = runif(1, 0, 100))}
+
+params <- c("alpha", "beta", "sigma", "residuals")
+
+jagsModel <- jags.model(file = textConnection(model),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 500)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000)
+```
+
+```{r}
+mcmc <- as.data.frame(do.call(rbind, Samples))
+means <- as.numeric(summarise_all(mcmc, funs(mean)))
+means <- means[-c(1:112, 678)]
+p.data <- melt(means)
+p.data$x <- c(1:677)
+
+ggplot(data = p.data, aes(x = x, y = value)) + geom_point()
+#ggplot(data = hares.) +
+#  geom_point(aes(x = scaled.year, y = mean.density, color = region))
+```
+
