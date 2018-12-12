@@ -53,6 +53,7 @@ Samples <- coda.samples(jagsModel,
 mcmc <- as.data.frame(do.call(rbind, Samples))
 colnames(mcmc) <- c("a.Pyrenees", "a.Massif", "a.Jura", "b.Pyrenees", "b.Massif", "b.Jura", "sigma")
 mcmc$diff.b.Mas.Jur <- mcmc$b.Massif - mcmc$b.Jura
+p.data <- melt(mcmc)
 sum(mcmc$diff.b.Mas.Jur > 0) / length(mcmc$diff.b.Mas.Jur)
 ```
 There is a 82% chance that the vipers in Massif Central are bigger than in Jura.
