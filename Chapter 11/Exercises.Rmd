@@ -3,7 +3,7 @@ title: "Chapter 11 - Exercises"
 output: html_notebook
 ---
 
-```{r, include=FALSE}
+```{r include=FALSE}
 library(here)
 library(rjags)
 library(ggplot2)
@@ -50,13 +50,23 @@ Samples <- coda.samples(jagsModel,
 ```
 
 ```{r}
+autocorr.plot(Samples[[1]][,1])
+```
+```{r}
+effectiveSize(Samples)
+```
+
+
+```{r}
 mcmc <- as.data.frame(do.call(rbind, Samples))
 colnames(mcmc) <- c("a.Pyrenees", "a.Massif", "a.Jura", "b.Pyrenees", "b.Massif", "b.Jura", "sigma")
+
 mcmc$diff.b.Mas.Jur <- mcmc$b.Massif - mcmc$b.Jura
+
 p.data <- melt(mcmc)
 sum(mcmc$diff.b.Mas.Jur > 0) / length(mcmc$diff.b.Mas.Jur)
 ```
-There is a 82% chance that the vipers in Massif Central are bigger than in Jura.
+There is a 85% chance that the vipers in Massif Central are bigger than in Jura.
 
 ```{r}
 ggplot(data = subset(p.data, variable == "diff.b.Mas.Jur"), aes(x = value)) + 
@@ -64,7 +74,7 @@ ggplot(data = subset(p.data, variable == "diff.b.Mas.Jur"), aes(x = value)) +
   geom_density(alpha = .2, fill = "#FF6666") +
   geom_vline(xintercept = 0, size = 2, colour = "red")
 ```
-The difference between Massif Central and Jura vipers
+The difference between Massif Central and Jura vipers.
 ```{r}
 ggplot(data = subset(p.data, variable == "b.Massif" | variable == "b.Jura"), aes(x = value, color = variable, fill = variable)) + 
   geom_histogram(aes(y = ..density..), alpha = .5, binwidth = 1, position = "identity") +
@@ -211,6 +221,8 @@ model {
  }
 "
 ```
+
+alternatively you can use pow(length, 2)
 
 ```{r}
 data <- list("length" = as.numeric(length.scaled),
