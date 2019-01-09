@@ -136,7 +136,7 @@ data <- list("mean.density" = hares.$mean.density,
              "ngroups" = max(as.numeric(hares.$site)))
 
 inits <- function(){ list(alpha = rnorm(max(as.numeric(hares.$site)), 0, 2), 
-                          beta = rnorm(max(as.numeric(hares.$site)), 10, 2),
+                          beta = rnorm(max(as.numeric(hares.$site)), 0, 2),
                           mu.int = rnorm(1, 0, 1),
                           mu.slope = rnorm(1, 0, 1),
                           sigma.int = rlnorm(1),
