@@ -1,0 +1,396 @@
+---
+title: "Chapter 12 - Book Code"
+output: html_notebook
+---
+
+```{r include=FALSE}
+library(here)
+library(lme4)
+library(lattice)
+library(MASS)
+library(rjags)
+library(ggplot2)
+library(reshape2)
+theme_set(theme_classic())
+set.seed(101)
+```
+
+### 12.2. Data generation
+
+```{r}
+n.groups <- 56				# Number of populations
+n.sample <- 10				# Number of vipers in each pop
+n <- n.groups * n.sample 		# Total number of data points
+pop <- gl(n = n.groups, k = n.sample) 	# Indicator for population
+```
+
+rescale length
+
+```{r}
+original.length <- runif(n, 45, 70) 
+length <- scale(original.length)
+hist(length, col = "grey")
+```
+
+```{r}
+Xmat <- model.matrix(~pop*length-1-length)
+
+intercept.mean <- 230			# mu_alpha
+intercept.sd <- 20			# sigma_alpha
+slope.mean <- 60			# mu_beta
+slope.sd <- 30				# sigma_beta
+
+intercept.effects<-rnorm(n = n.groups, mean = intercept.mean, sd = intercept.sd)
+slope.effects <- rnorm(n = n.groups, mean = slope.mean, sd = slope.sd)
+all.effects <- c(intercept.effects, slope.effects) # Put them all together
+
+lin.pred <- Xmat[,] %*% all.effects	# Value of lin.predictor
+eps <- rnorm(n = n, mean = 0, sd = 30)	# residuals 
+mass <- lin.pred + eps			# response = lin.pred + residual
+
+hist(mass, col = "grey")		# Inspect what we’ve created
+```
+
+```{r}
+xyplot(lin.pred ~ length | pop)
+```
+
+```{r}
+xyplot(lin.pred ~ length | pop)
+```
+
+### 12.3. Analysis under a random-intercepts model
+
+
+### 12.3.1. Frequentist analysis
+
+```{r}
+library('lme4')
+lme.fit1 <- lmer(mass ~ length + (1 | pop), REML = TRUE)
+summary(lme.fit1)
+```
+
+
+### 12.3.2. Bayesian analysis
+# Write model
+
+```{r}
+model <-"
+model {
+
+# Priors
+ for (i in 1:ngroups){		
+    alpha[i] ~ dnorm(mu.int, tau.int)	# Random intercepts
+ }
+
+ mu.int ~ dnorm(0, 0.001)		# Mean hyperparameter for random intercepts
+ tau.int <- 1 / (sigma.int * sigma.int)
+ sigma.int ~ dunif(0, 100)		# SD hyperparameter for random intercepts
+
+ beta ~ dnorm(0, 0.001)			# Common slope
+ tau <- 1 / ( sigma * sigma)		# Residual precision
+ sigma ~ dunif(0, 100)			# Residual standard deviation
+
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)		# The random variable
+    mu[i] <- alpha[pop[i]] + beta* length[i] # Expectation
+ }
+}
+" 
+```
+
+```{r}
+data <- list("length" = as.numeric(length),
+             "mass" = as.numeric(mass),
+             "pop" = as.numeric(pop),
+             "n" = n,
+             "ngroups" = max(as.numeric(pop)))
+
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), 
+                          beta = rnorm(1, 1, 1),
+                          mu.int = rnorm(1, 0, 1),
+                          sigma.int = rlnorm(1),
+                          sigma = rlnorm(1))}
+
+params <- c("alpha", "beta", "mu.int", "sigma.int", "sigma")
+
+jagsModel <- jags.model(file = textConnection(model),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 500)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 2000,
+                        thin = 2)
+```
+
+# Compare with input values
+intercept.mean  ;  slope.mean  ;  intercept.sd  ;  slope.sd  ;  sd(eps)
+
+
+
+### 12.4. Analysis under a random-coefficients model without correlation between intercept and slope
+
+
+### 12.4.1. Frequentist Analysis
+
+```{r}
+lme.fit2 <- lmer(mass ~ length + (1 | pop) + ( 0+ length | pop))
+summary(lme.fit2)
+```
+
+### 12.4.2. Bayesian analysis
+
+# Define model
+
+```{r}
+model <- "
+model {
+
+# Priors
+ for (i in 1:ngroups){		
+    alpha[i] ~ dnorm(mu.int, tau.int)	# Random intercepts
+    beta[i] ~ dnorm(mu.slope, tau.slope)# Random slopes
+ }
+
+ mu.int ~ dnorm(0, 0.001)		# Mean hyperparameter for random intercepts
+ tau.int <- 1 / (sigma.int * sigma.int)
+ sigma.int ~ dunif(0, 100)		# SD hyperparameter for random intercepts
+
+ mu.slope ~ dnorm(0, 0.001)		# Mean hyperparameter for random slopes
+ tau.slope <- 1 / (sigma.slope * sigma.slope)
+ sigma.slope ~ dunif(0, 100)		# SD hyperparameter for slopes
+
+ tau <- 1 / ( sigma * sigma)		# Residual precision
+ sigma ~ dunif(0, 100)			# Residual standard deviation
+
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta[pop[i]]* length[i]
+ }
+}
+"
+```
+
+```{r}
+data <- list("length" = as.numeric(length),
+             "mass" = as.numeric(mass),
+             "pop" = as.numeric(pop),
+             "n" = n,
+             "ngroups" = max(as.numeric(pop)))
+
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), 
+                          beta = rnorm(n.groups, 1, 1),
+                          mu.int = rnorm(1, 0, 1),
+                          mu.slope = rnorm(1, 0, 1),
+                          sigma.int = rlnorm(1),
+                          sigma = rlnorm(1),
+                          sigma.slope = rlnorm(1))}
+
+params <- c("alpha", "beta", "mu.int", "mu.slope", "sigma.int", "sigma.slope", "sigma")
+
+jagsModel <- jags.model(file = textConnection(model),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 500)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 2000,
+                        thin = 2)
+```
+
+
+# Compare with input values
+intercept.mean  ;  slope.mean  ;  intercept.sd  ;  slope.sd  ;  sd(eps)
+
+
+
+### 12.5. The random-coefficients model with correlation between intercept and slope
+
+
+### 12.5.2. Data generation
+
+```{r}
+set.seed(101)
+
+n.groups <- 56
+n.sample <- 10
+n <- n.groups * n.sample 
+pop <- gl(n = n.groups, k = n.sample)
+
+original.length <- runif(n, 45, 70)
+length <- scale(original.length)
+
+Xmat <- model.matrix(~ pop * length - 1 - length)
+
+intercept.mean <- 230			# Values for five hyperparameters
+intercept.sd <- 20
+slope.mean <- 60
+slope.sd <- 30
+intercept.slope.covariance <- 10
+
+mu.vector <- c(intercept.mean, slope.mean)
+var.cova.matrix <- matrix(c(intercept.sd^2,
+                            intercept.slope.covariance,
+                            intercept.slope.covariance, 
+                            slope.sd^2), 2,2)
+set.seed(106)
+effects <- mvrnorm(n = n.groups, mu = mu.vector, Sigma = var.cova.matrix)
+var.cova.matrix
+```
+
+Diagonal describes the variance for the intercept and slope.
+In the off-diagonals is the covariance between intercept and slope, high covariance means intercept goes up, so does the slope and vice versa for negative covariance.
+
+```{r}
+apply(effects, 2, mean)
+var(effects)
+intercept.effects <- effects[,1]
+slope.effects <- effects[,2]
+
+```
+
+```{r}
+
+set.seed(101)
+effects2 <- mvrnorm(n = n.groups, mu = mu.vector, Sigma = matrix(c(intercept.sd^2,
+                            200,200, 
+                            slope.sd^2), 2,2))
+covar.data <- as.data.frame(rbind(effects,effects2))
+colnames(covar.data) <- c("int", "slp")
+covar.data$col <- c(rep("cv10", 56), rep("cv200", 56))
+```
+
+```{r}
+ggplot(covar.data, aes(int, slp, color = col)) + geom_point(size = 3) + geom_smooth(method = "lm", se = FALSE)
+```
+
+Example showing the differences in covariance from 10 to 200.
+
+```{r}
+intercept.effects <- effects[,1]
+slope.effects <- effects[,2]
+all.effects <- c(intercept.effects, slope.effects) # Put them all together
+
+lin.pred <- Xmat[,] %*% all.effects	# Value of lin.predictor
+eps <- rnorm(n = n, mean = 0, sd = 30)	# residuals 
+mass <- lin.pred + eps			# response = lin.pred + residual
+
+hist(mass, col = "grey")		# Inspect what we’ve created
+```
+
+```{r}
+xyplot(mass ~ length | pop)
+```
+
+
+### 12.5.3. Frequentist Analysis
+
+```{r}
+lme.fit3 <- lmer(mass ~ length + (length | pop))
+lme.fit3
+```
+
+### 12.5.4. Bayesian analysis
+
+# Define model
+
+```{r}
+model <- "
+model {
+
+# Priors
+ for (i in 1:ngroups){
+    alpha[i] <- B[i,1]
+    beta[i] <- B[i,2]
+    B[i,1:2] ~ dmnorm(B.hat[i,], Tau.B[,])
+    B.hat[i,1] <- mu.int
+    B.hat[i,2] <- mu.slope
+}
+
+ mu.int ~ dnorm(0, 0.001)		# Hyperpriors for random intercepts
+ mu.slope ~ dnorm(0, 0.001)		# Hyperpriors for random slopes
+
+ Tau.B[1:2,1:2] <- inverse(Sigma.B[,])
+ Sigma.B[1,1] <- pow(sigma.int,2)
+ sigma.int ~ dunif(0, 1000)		# SD of intercepts
+ Sigma.B[2,2] <- pow(sigma.slope,2)
+ sigma.slope ~ dunif(0, 1000)		# SD of slopes
+ Sigma.B[1,2] <- rho*sigma.int*sigma.slope
+ Sigma.B[2,1] <- Sigma.B[1,2]
+ rho ~ dunif(-1,1)
+ covariance <- Sigma.B[1,2]
+
+ tau <- 1 / ( sigma * sigma)		# Residual
+ sigma ~ dunif(0, 100)			# Residual standard deviation
+
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)		# The 'residual' random variable
+    mu[i] <- alpha[pop[i]] + beta[pop[i]]* length[i]  # Expectation
+ }
+}
+"
+```
+
+# Bundle data
+
+```{r}
+data <- list("length" = as.numeric(length),
+             "mass" = as.numeric(mass),
+             "pop" = as.numeric(pop),
+             "n" = n,
+             "ngroups" = max(as.numeric(pop)))
+
+inits <- function(){ list(mu.int = rnorm(1, 0, 1),
+                          mu.slope = rnorm(1, 0, 1),
+                          sigma.int = rlnorm(1),
+                          sigma = rlnorm(1),
+                          sigma.slope = rlnorm(1),
+                          rho = runif(1, -1, 1))}
+
+params <- c("mu.int", "mu.slope", "sigma.int", "sigma.slope", "sigma", "rho", "covariance")
+
+jagsModel <- jags.model(file = textConnection(model),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 1000)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 2000,
+                        thin = 2)
+```
+
+```{r message=FALSE, warning=FALSE}
+mcmc <- as.data.frame(do.call(rbind, Samples))
+p.data <- melt(mcmc)
+
+ggplot(data = subset(p.data, variable == "mu.int"), aes(x = value)) + 
+  geom_histogram(aes(y = ..density..), colour = "black", fill = "white", binwidth = 1) +
+  geom_density(alpha = .2, fill = "#FF6666")
+```
+
+Posterior of mean intercept
+
+```{r}
+ggplot(data = subset(p.data, variable == "mu.slope"), aes(x = value)) + 
+  geom_histogram(aes(y = ..density..), colour = "black", fill = "white", binwidth = 1) +
+  geom_density(alpha = .2, fill = "#FF6666")
+```
+
+Posterior of mean slope
+
+```{r}
+ggplot(data = subset(p.data, variable == "covariance"), aes(x = value)) + 
+  geom_histogram(aes(y = ..density..), colour = "black", fill = "white", binwidth = 1) +
+  geom_density(alpha = .2, fill = "#FF6666")
+```
+

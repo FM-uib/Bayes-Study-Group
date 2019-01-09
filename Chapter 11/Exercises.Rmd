@@ -264,7 +264,9 @@ ggplot(data = p.data) +
   stat_function(colour = "blue", fun = function(x) means[3] + means[6] * x + means[9] * x^2)
 ```
 
-4. Swiss haredata: Fit an ANCOVA (pop * year, with year as a continuous
+## Exercise 4
+
+Swiss haredata: Fit an ANCOVA (pop * year, with year as a continuous
 explanatory variable) to the meandensity. Also compute residuals and plot
 them to check for outliers.
 

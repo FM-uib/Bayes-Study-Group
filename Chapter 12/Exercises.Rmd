@@ -1,0 +1,159 @@
+---
+title: "Chapter 12 - Exercises"
+output: html_notebook
+---
+
+```{r}
+library(here)
+library(rjags)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+theme_set(theme_classic())
+```
+
+## Exercise 1
+
+```{r}
+n.groups <- 56				# Number of populations
+n.sample <- 10				# Number of vipers in each pop
+n <- n.groups * n.sample 		# Total number of data points
+pop <- gl(n = n.groups, k = n.sample) 	# Indicator for population
+original.length <- runif(n, 45, 70) 
+length <- scale(original.length)
+
+Xmat <- model.matrix(~pop*length-1-length)
+
+intercept.mean <- 230			# mu_alpha
+intercept.sd <- 20			# sigma_alpha
+slope.mean <- 60			# mu_beta
+slope.sd <- 30				# sigma_beta
+
+intercept.effects <- rnorm(n = n.groups, mean = intercept.mean, sd = intercept.sd)
+slope.effects <- rnorm(n = n.groups, mean = slope.mean, sd = slope.sd)
+all.effects <- c(intercept.effects, slope.effects) # Put them all together
+
+lin.pred <- Xmat[,] %*% all.effects	# Value of lin.predictor
+eps <- rnorm(n = n, mean = 0, sd = 30)	# residuals 
+mass <- lin.pred + eps
+```
+
+
+# Define model
+
+```{r}
+model <- "
+model {
+
+# Priors
+ for (i in 1:ngroups){		
+    alpha[i] ~ dnorm(0, 0.00001)
+    beta[i] ~ dnorm(0, 0.00001)
+ }
+
+ tau <- 1 / ( sigma * sigma)		# Residual precision
+ sigma ~ dunif(0, 100)			# Residual standard deviation
+
+# Likelihood
+ for (i in 1:n) {
+    mass[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[pop[i]] + beta[pop[i]]* length[i]
+ }
+}
+"
+```
+
+```{r}
+data <- list("length" = as.numeric(length),
+             "mass" = as.numeric(mass),
+             "pop" = as.numeric(pop),
+             "n" = n,
+             "ngroups" = max(as.numeric(pop)))
+
+inits <- function(){ list(alpha = rnorm(n.groups, 0, 2), 
+                          beta = rnorm(n.groups, 1, 1),
+                          sigma = rlnorm(1))}
+
+params <- c("alpha", "beta", "sigma")
+
+jagsModel <- jags.model(file = textConnection(model),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 500)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 2000,
+                        thin = 2)
+```
+
+## Exercise 2
+
+```{r}
+hares <- read.table(file = here("data","hares.data.txt"), header = TRUE)
+
+hares. <- hares %>%
+  filter(!is.na(mean.density))
+hares.$scaled.year <- scale(hares.$year)
+```
+
+```{r}
+model <- "
+model {
+
+# Priors
+ for (i in 1:ngroups){		
+    alpha[i] ~ dnorm(mu.int, tau.int)	# Random intercepts
+    beta[i] ~ dnorm(mu.slope, tau.slope)# Random slopes
+ }
+
+ mu.int ~ dnorm(0, 0.001)		# Mean hyperparameter for random intercepts
+ tau.int <- 1 / (sigma.int * sigma.int)
+ sigma.int ~ dunif(0, 100)		# SD hyperparameter for random intercepts
+
+ mu.slope ~ dnorm(0, 0.001)		# Mean hyperparameter for random slopes
+ tau.slope <- 1 / (sigma.slope * sigma.slope)
+ sigma.slope ~ dunif(0, 100)		# SD hyperparameter for slopes
+
+ tau <- 1 / ( sigma * sigma)		# Residual precision
+ sigma ~ dunif(0, 100)			# Residual standard deviation
+
+# Likelihood
+ for (i in 1:n) {
+    mean.density[i] ~ dnorm(mu[i], tau)
+    mu[i] <- alpha[site[i]] + beta[site[i]]* year[i]
+ }
+}
+"
+```
+
+```{r}
+data <- list("mean.density" = hares.$mean.density,
+             "year" = as.numeric(hares.$scaled.year),
+             "site" = as.numeric(hares.$site),
+             "n" = nrow(hares.),
+             "ngroups" = max(as.numeric(hares.$site)))
+
+inits <- function(){ list(alpha = rnorm(max(as.numeric(hares.$site)), 0, 2), 
+                          beta = rnorm(max(as.numeric(hares.$site)), 10, 2),
+                          mu.int = rnorm(1, 0, 1),
+                          mu.slope = rnorm(1, 0, 1),
+                          sigma.int = rlnorm(1),
+                          sigma = rlnorm(1),
+                          sigma.slope = rlnorm(1))}
+
+params <- c("alpha", "beta", "mu.int", "mu.slope", "sigma.int", "sigma.slope", "sigma")
+
+jagsModel <- jags.model(file = textConnection(model),
+                        data = data,
+                        init = inits,
+                        n.chains = 3, 
+                        n.adapt = 500)
+
+Samples <- coda.samples(jagsModel, 
+                        variable.names = params, 
+                        n.iter = 1000,
+                        thin = 2)
+```
+
