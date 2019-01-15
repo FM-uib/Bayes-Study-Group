@@ -52,7 +52,7 @@ hist(mass, col = "grey")		# Inspect what we’ve created
 ```
 
 ```{r}
-xyplot(lin.pred ~ length | pop)
+xyplot(mass ~ length | pop)
 ```
 
 ```{r}
@@ -61,6 +61,8 @@ xyplot(lin.pred ~ length | pop)
 
 ### 12.3. Analysis under a random-intercepts model
 
+We assume random intercept that are derived from a normal distribution with shared common mean.
+a linear relationship between mass and length, with the starting point (intercept) being different in each population, but change (slope) is the same in all populations.
 
 ### 12.3.1. Frequentist analysis
 
@@ -72,7 +74,9 @@ summary(lme.fit1)
 
 
 ### 12.3.2. Bayesian analysis
-# Write model
+Write model
+
+Slope (beta) has no prior based on population 
 
 ```{r}
 model <-"
@@ -100,7 +104,7 @@ model {
 " 
 ```
 
-```{r}
+```{r include=FALSE}
 data <- list("length" = as.numeric(length),
              "mass" = as.numeric(mass),
              "pop" = as.numeric(pop),
@@ -128,23 +132,32 @@ Samples <- coda.samples(jagsModel,
 ```
 
 # Compare with input values
-intercept.mean  ;  slope.mean  ;  intercept.sd  ;  slope.sd  ;  sd(eps)
 
+```{r}
+mcmc <- do.call(rbind, Samples)
+
+cbind(colMeans(mcmc[, 57:60]),c(slope.mean, intercept.mean, slope.sd, intercept.sd))
+
+```
+
+Values mostly match, but the intercept standart deviation is larger by a margin. 
 
 
 ### 12.4. Analysis under a random-coefficients model without correlation between intercept and slope
 
+We assume random slopes and intercepts that share a common mean between populations, but are not dependend on each other.
 
 ### 12.4.1. Frequentist Analysis
 
 ```{r}
-lme.fit2 <- lmer(mass ~ length + (1 | pop) + ( 0+ length | pop))
+lme.fit2 <- lmer(mass ~ length + (1 | pop) + ( 0 + length | pop))
 summary(lme.fit2)
 ```
 
 ### 12.4.2. Bayesian analysis
 
-# Define model
+Define model
+alpha and beta have shared means between populations -> random effects.
 
 ```{r}
 model <- "
@@ -176,7 +189,7 @@ model {
 "
 ```
 
-```{r}
+```{r include=FALSE}
 data <- list("length" = as.numeric(length),
              "mass" = as.numeric(mass),
              "pop" = as.numeric(pop),
@@ -205,14 +218,20 @@ Samples <- coda.samples(jagsModel,
                         thin = 2)
 ```
 
-
 # Compare with input values
-intercept.mean  ;  slope.mean  ;  intercept.sd  ;  slope.sd  ;  sd(eps)
 
+```{r}
+mcmc <- do.call(rbind, Samples)
+
+cbind(colMeans(mcmc[, 113:117]),c(intercept.mean, slope.mean, sd(eps), intercept.sd, slope.sd))
+```
+
+The random coefficient model gets much closer than the first.
 
 
 ### 12.5. The random-coefficients model with correlation between intercept and slope
 
+Same as second model, but we have a correlation between slope and intercept, meaning high inital mass also means large gains with increase in lenght or vice versa in case of negative correlation.
 
 ### 12.5.2. Data generation
 
@@ -258,20 +277,20 @@ slope.effects <- effects[,2]
 
 ```{r}
 
-set.seed(101)
+set.seed(106)
 effects2 <- mvrnorm(n = n.groups, mu = mu.vector, Sigma = matrix(c(intercept.sd^2,
-                            200,200, 
+                            500,500, 
                             slope.sd^2), 2,2))
 covar.data <- as.data.frame(rbind(effects,effects2))
 colnames(covar.data) <- c("int", "slp")
-covar.data$col <- c(rep("cv10", 56), rep("cv200", 56))
+covar.data$col <- c(rep("cv10", 56), rep("cv500", 56))
 ```
 
 ```{r}
 ggplot(covar.data, aes(int, slp, color = col)) + geom_point(size = 3) + geom_smooth(method = "lm", se = FALSE)
 ```
 
-Example showing the differences in covariance from 10 to 200.
+Example showing the differences in covariance from 10 to 500. cv of 10 is quite weak as we can see. 
 
 ```{r}
 intercept.effects <- effects[,1]
@@ -341,7 +360,7 @@ model {
 
 # Bundle data
 
-```{r}
+```{r include=FALSE}
 data <- list("length" = as.numeric(length),
              "mass" = as.numeric(mass),
              "pop" = as.numeric(pop),
@@ -375,7 +394,8 @@ p.data <- melt(mcmc)
 
 ggplot(data = subset(p.data, variable == "mu.int"), aes(x = value)) + 
   geom_histogram(aes(y = ..density..), colour = "black", fill = "white", binwidth = 1) +
-  geom_density(alpha = .2, fill = "#FF6666")
+  geom_density(alpha = .2, fill = "#FF6666") +
+  xlab("mu.int")
 ```
 
 Posterior of mean intercept
@@ -383,14 +403,16 @@ Posterior of mean intercept
 ```{r}
 ggplot(data = subset(p.data, variable == "mu.slope"), aes(x = value)) + 
   geom_histogram(aes(y = ..density..), colour = "black", fill = "white", binwidth = 1) +
-  geom_density(alpha = .2, fill = "#FF6666")
+  geom_density(alpha = .2, fill = "#FF6666") +
+  xlab("mu.slope")
 ```
 
 Posterior of mean slope
 
 ```{r}
 ggplot(data = subset(p.data, variable == "covariance"), aes(x = value)) + 
-  geom_histogram(aes(y = ..density..), colour = "black", fill = "white", binwidth = 1) +
-  geom_density(alpha = .2, fill = "#FF6666")
+  geom_histogram(aes(y = ..density..), colour = "black", fill = "white", binwidth = 10) +
+  geom_density(alpha = .2, fill = "#FF6666") +
+  xlab("covariance") + geom_vline(xintercept = 10)
 ```
 
