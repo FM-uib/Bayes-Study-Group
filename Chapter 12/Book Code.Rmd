@@ -328,7 +328,7 @@ model {
  for (i in 1:ngroups){
     alpha[i] <- B[i,1]
     beta[i] <- B[i,2]
-    B[i,1:2] ~ dmnorm(B.hat[i,], Tau.B[,])
+    B[i,1:2] ~ dmnorm(B.hat[i,], Tau.B[,]) # multivariate normal distribution (joint distribution)
     B.hat[i,1] <- mu.int
     B.hat[i,2] <- mu.slope
 }
@@ -336,15 +336,18 @@ model {
  mu.int ~ dnorm(0, 0.001)		# Hyperpriors for random intercepts
  mu.slope ~ dnorm(0, 0.001)		# Hyperpriors for random slopes
 
- Tau.B[1:2,1:2] <- inverse(Sigma.B[,])
+ Tau.B[1:2,1:2] <- inverse(Sigma.B[,]) # Bugs uses tau instead of sd
+ # Sigma.B is the covariance matrix
  Sigma.B[1,1] <- pow(sigma.int,2)
- sigma.int ~ dunif(0, 1000)		# SD of intercepts
  Sigma.B[2,2] <- pow(sigma.slope,2)
- sigma.slope ~ dunif(0, 1000)		# SD of slopes
  Sigma.B[1,2] <- rho*sigma.int*sigma.slope
  Sigma.B[2,1] <- Sigma.B[1,2]
- rho ~ dunif(-1,1)
- covariance <- Sigma.B[1,2]
+
+ sigma.int ~ dunif(0, 1000)		# SD of intercepts
+ sigma.slope ~ dunif(0, 1000)		# SD of slopes
+
+ rho ~ dunif(-1,1) # basically a correlation coefficient
+ covariance <- Sigma.B[1,2] # The off-diagonals
 
  tau <- 1 / ( sigma * sigma)		# Residual
  sigma ~ dunif(0, 100)			# Residual standard deviation
